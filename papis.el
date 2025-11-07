@@ -457,18 +457,6 @@ the whole cache."
         (1 (car files))
         (_ (completing-read "" files)))))
 
-;; Citations
-;; In general it is recommended to use the citation mechanisms of
-;; =org-ref=, however, if for some reason you would like to cite
-;; directly from =papis=, you can use the function
-
-(defun papis-insert-citation (doc)
-  (interactive (list (papis--read-doc)))
-  (let* ((ref (papis--doc-ref doc)))
-    (if (fboundp 'citar-insert-citation)
-        (citar-insert-citation (list ref))
-      (insert (format "[cite:@%s]" ref)))))
-
 ;;;; Dynamic block to tangle a .bib from all references in an org file
 
 (defun papis-org-list-keys ()
