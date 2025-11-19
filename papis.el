@@ -1,5 +1,21 @@
+;; papis.el --- Use Papis from emacs -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2020-2024 Alejandro Gallo
+;; Copyright (C) 2025 Jean-Alexandre Barszcz
+
+;; Keywords: Papis, Bibliography
+;; URL: https://github.com/papis/papis.el
+
+;;; Commentary:
+
+;; TODO
+
+;;; Code:
+
 (require 'ol)
 (require 'json)
+
+;;;; Customization
 
 (defgroup papis nil
   "Official Papis package for Emacs."
@@ -7,8 +23,6 @@
   :prefix "papis-"
   :link '(url-link :tag "Github"
           "https://github.com/papis/papis.el"))
-
-;; Variables
 
 (defcustom papis-binary-path
   "papis"
@@ -40,7 +54,7 @@
   :type 'string
   :group 'papis)
 
-;; Document
+;;;; Papis Documents
 
 (defun papis-doc-get-folder (doc)
   (papis-doc-get doc "_papis_local_folder"))
@@ -69,9 +83,7 @@
   (let ((folder (papis-doc-get-folder doc)))
     (papis--cmd (concat "update --doc-folder " folder))))
 
-;; Issuing commands to the shell
-;;  The main interface with papis commands will be =papis--cmd=
-;;  which is a function intended for library writers.
+;;;; Issuing commands to the shell
 
 (cl-defun papis--cmd (cmd &optional with-stdout)
   "Helping function to run papis commands"
@@ -86,7 +98,7 @@
     (funcall sys
              full-cmd)))
 
-;; papis-query
+;;;; Getting document metadata from Papis
 
 ;; A papis document object is represented in =papis.el=
 ;; as a =hashtable=, and the command that turns a query
@@ -108,10 +120,8 @@
     (setq query (papis-id-query id)))
   (papis--json-string-to-documents (papis-json :query query
                                                :doc-folder doc-folder)))
-;; papis-open
 
-;; The cornerstone of papis is opening documents, in emacs
-;; the command is also available:
+;;;; Public Papis commands
 
 (defun papis-browse (doc)
   (interactive (list (papis--read-doc)))
@@ -133,7 +143,7 @@
     (split-window-horizontally)
     (find-file file)))
 
-;; Notes
+;;;; Notes
 
 (defcustom papis-edit-new-notes-hook nil
   "Hook for when a new note file is being edited.
@@ -181,7 +191,7 @@
                               doc)))
       (find-file notes-path))))
 
-;; papis-edit
+;;;; Editing Papis info files
 
 (define-minor-mode papis-edit-mode
     "General mode for editing papis files"
@@ -201,16 +211,7 @@
     (find-file info)
     (papis-edit-mode)))
 
-;; papis-exec
-
-(defun papis-exec (python-file &optional arguments)
-  (let ((fmt "exec %s %s"))
-    (papis--cmd (format fmt
-                        python-file
-                        (or arguments ""))
-                t)))
-
-;; papis-export
+;;;; papis-export
 
 (progn
   (defmacro papis--make-exporter (format-name)
@@ -231,7 +232,7 @@
   (papis--make-exporter typist)
   (papis--make-exporter json))
 
-;; Document reader
+;;;; Document completion from the minibuffer
 
 (defun papis-default-read-format-function (doc)
   `(
@@ -284,7 +285,7 @@
                   (completing-read "Select an entry: " formatted-results)
                   formatted-results)))))))
 
-;; papis
+;;;; Org-mode hyperlinks for Papis
 
 (require 'ol-doi)
 (org-link-set-parameters "papis"
@@ -325,6 +326,8 @@
     (org-set-property "YEAR" (format "%s" year))
     (org-set-property "DOI" doi)))
 
+;;;; org-ref
+
 (defun papis-org-ref-get-pdf-filename (key)
     (interactive)
     (let* ((docs (papis-query (format "ref:'%s'" key)))
@@ -346,8 +349,7 @@
         (citar-insert-citation (list ref))
       (insert (format "[cite:@%s]" ref)))))
 
-;; and we will need also a way of listing all the keys of the document
-;; for further functions. I took this from the good =citar= package
+;;;; Dynamic block to tangle a .bib from all references in an org file
 
 (defun papis-org-list-keys ()
   "List citation keys in the org buffer."
@@ -356,6 +358,13 @@
      (org-element-map org-tree 'citation-reference
        (lambda (r) (org-element-property :key r))
        org-tree))))
+
+(defun papis-exec (python-file &optional arguments)
+  (let ((fmt "exec %s %s"))
+    (papis--cmd (format fmt
+                        python-file
+                        (or arguments ""))
+                t)))
 
 (defvar papis--refs-to-bibtex-script
 "
@@ -383,8 +392,6 @@ for d in docs:
       (insert papis--refs-to-bibtex-script)
       (write-file py-script))
     (papis-exec py-script (s-join " " refs))))
-
-;; The =papis-bibtex-refs= dynamic block
 
 (defun papis-create-papis-bibtex-refs-dblock (bibfile)
   (insert (format "#+begin: papis-bibtex-refs :tangle %s" bibfile))
@@ -415,3 +422,5 @@ for d in docs:
   (insert "#+end_src\n"))
 
 (provide 'papis)
+
+;;; papis.el ends here
