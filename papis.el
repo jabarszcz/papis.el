@@ -70,13 +70,6 @@
   (let ((folder (papis-doc-get-folder doc)))
     (papis--cmd (concat "update --doc-folder " folder))))
 
-;; Introduction
-;; Most papis commands will need a query, the macro =@papis-query= will
-;; take care of having the same query prompt in all commands.
-
-(defmacro @papis-query ()
-  `(interactive ,papis--query-prompt))
-
 ;; Issuing commands to the shell
 ;;  The main interface with papis commands will be =papis--cmd=
 ;;  which is a function intended for library writers.
