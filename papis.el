@@ -3,8 +3,8 @@
 (require 'f)
 
 (defgroup papis nil
-  "Official papis package for emacs"
-  :group 'papis
+  "Official Papis package for Emacs."
+  :group 'external
   :prefix "papis-"
   :link '(url-link :tag "Github"
           "https://github.com/papis/papis.el"))
