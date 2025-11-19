@@ -1,6 +1,5 @@
 (require 'ol)
 (require 'json)
-(require 'f)
 
 (defgroup papis nil
   "Official Papis package for Emacs."
@@ -284,8 +283,8 @@
      (papis-from-id (papis--org-looking-at-link)))
     ((and (not force-query)
           (let* ((filename (buffer-file-name (current-buffer)))
-                 (dirname (f-dirname filename))
-                 (yaml.info (f-join dirname "info.yaml")))
+                 (dirname (file-name-directory filename))
+                 (yaml.info (file-name-concat dirname "info.yaml")))
             (when (file-exists-p yaml.info)
               (car (papis-query :doc-folder dirname))))))
     ((and (not force-query)
