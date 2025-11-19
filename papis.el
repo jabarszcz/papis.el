@@ -11,10 +11,6 @@
 
 ;; Variables
 
-(defvar papis--temp-output-file nil
-  "This variable holds the papis temporary output file where the json
-  output is dumped")
-
 (defcustom papis-binary-path
   "papis"
   "The binary path for papis.
