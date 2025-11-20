@@ -13,6 +13,7 @@
 ;;; Code:
 
 (require 'ol)
+(require 'org-element)
 (require 'json)
 
 ;;;; Customization
