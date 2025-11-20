@@ -387,7 +387,7 @@ for d in docs:
     (with-temp-buffer
       (insert papis--refs-to-bibtex-script)
       (write-file py-script))
-    (papis-exec py-script (s-join " " refs))))
+    (papis-exec py-script (string-join refs " "))))
 
 (defun papis-create-papis-bibtex-refs-dblock (bibfile)
   (insert (format "#+begin: papis-bibtex-refs :tangle %s" bibfile))
