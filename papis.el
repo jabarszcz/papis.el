@@ -36,6 +36,7 @@
   #'papis-default-read-format-function
   "Function taking a papis document (hashmap) and outputing a
    string representation of it to be fed into the reader."
+  :type 'function
   :group 'papis)
 
 (defcustom papis--query-prompt
