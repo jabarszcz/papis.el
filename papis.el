@@ -198,9 +198,7 @@ Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
                  (interactive (list default-directory))
                  (message "Updating the cache for %s" folder)
                  (papis--cmd (format "cache update --doc-folder %s"
-                                     folder)))))
-
-  (defvar-local papis-edit-mode-id nil))
+                                     folder))))))
 
 (defun papis-edit (doc)
   (interactive (list (papis--read-doc)))
