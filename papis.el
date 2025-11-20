@@ -129,8 +129,8 @@
          (cond
            ((papis-doc-get doc "url" nil))
            ((when-let ((doi (papis-doc-get doc "doi" nil)))
-              (format "https://doi.org/%s" doi))
-            (t (error "Neither url nor doi found in this document."))))))
+              (format "https://doi.org/%s" doi)))
+           (t (error "Neither url nor doi found in this document.")))))
     (browse-url url)))
 
 (defun papis-open (doc)
