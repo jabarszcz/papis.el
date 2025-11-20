@@ -399,7 +399,7 @@ for d in docs:
   (interactive)
   (if (org-find-dblock "papis-bibtex-refs")
       (progn
-        (org-show-entry)
+        (org-fold-show-entry)
         (org-update-dblock))
     (papis-create-papis-bibtex-refs-dblock
      (or bibfile (read-file-name "Bib file: " nil "main.bib")))))
