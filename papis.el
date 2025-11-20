@@ -176,12 +176,9 @@
                                 t))))
 
 (defun papis-notes (doc &optional run-hook)
-  """
-  Create notes for a document or open the note
-  DOC is the papis document.
-  Whenever RUN-HOOK is non-nil, the hook for the notes
-  will be ran.
-  """
+  "Open or create notes for a document DOC.
+
+Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
   (interactive (list (papis--read-doc)
                      current-prefix-arg))
   (let ((has-notes-p (papis-doc-get doc "notes")))
