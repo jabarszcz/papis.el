@@ -288,12 +288,12 @@ Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
                          :follow (lambda (papis-id)
                                    (papis-open (papis-from-id papis-id)))
                          :export #'ol-papis-export
-                         :complete (lambda (&optional arg)
+                         :complete (lambda (&optional _arg)
                                      (format "papis:%s"
                                              (papis-doc-get (papis--read-doc)
                                                             "papis_id")))
                          :insert-description
-                         (lambda (link desc)
+                         (lambda (link _desc)
                            (let* ((papis-id (string-replace "papis:"  "" link))
                                   (doc (papis-from-id papis-id)))
                              (papis-doc-get doc "title"))))
@@ -301,7 +301,7 @@ Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
 (defun ol-papis-export (papis-id description format info)
   (let* ((doc (papis-from-id papis-id))
          (doi (papis-doc-get doc "doi"))
-         (url (papis-doc-get doc "url")))
+         (_url (papis-doc-get doc "url")))
     (cond
       (doi (org-link-doi-export doi description format info)))))
 
