@@ -33,6 +33,18 @@ environment."
   :type 'string
   :group 'papis)
 
+(defcustom papis-library nil
+  "Papis library to be used in commands.
+
+When nil, use the default library configured in the Papis config."
+  :type 'string
+  :group 'papis)
+
+(defcustom papis-extra-options nil
+  "Additional options for papis commands."
+  :type '(repeat string)
+  :group 'papis)
+
 (defcustom papis-read-format-function
   #'papis-default-read-format-function
   "Function taking a papis document (hashmap) and outputing a
@@ -47,14 +59,62 @@ environment."
   :type 'string
   :group 'papis)
 
-(defcustom papis-library
-  nil
-  "papis library to be used in commands.
-   If it is set to nil then the default library of your system will
-   be used.
-  "
-  :type 'string
-  :group 'papis)
+;;;; Functions to run Papis
+
+(defun papis--add-options (args)
+  "Append options to the arguments list ARGS passed to Papis.
+
+The additional options are configured in the variable `papis-library'
+and the variable `papis-extra-options'."
+  (let ((libopt (when papis-library (list "-l" papis-library))))
+    (append libopt papis-extra-options args)))
+
+(defun papis--cmd-str (args)
+  "Return the string for the command running Papis with ARGS."
+  (let* ((cmd papis-program)
+         (args (papis--add-options args)))
+    (combine-and-quote-strings (cons cmd args))))
+
+(defun papis--run (args &optional destination)
+  "Run the papis program with arguments ARGS.
+
+ARGS is the list of arguments passed to the Papis program (sub-command
+included).
+
+DESTINATION uses the same format as `call-process'."
+  (let ((cmd papis-program)
+        (all-args (papis--add-options args)))
+    (message (papis--cmd-str args))
+    (apply 'call-process cmd nil destination nil all-args)))
+
+(defun papis--run-to-string (args &optional mixstderr)
+  "Run the Papis program with ARGS, and copy the output to a string.
+
+ARGS is the list of arguments passed to the Papis program (sub-command
+included).
+
+When MIXSTDERR is t, the returned string also includes the error output."
+  (let ((outbuf (generate-new-buffer " *papis-output*")))
+    (with-current-buffer outbuf
+      (papis--run args (list outbuf mixstderr))
+      (prog1 (string-trim (buffer-string))
+        (kill-buffer)))))
+
+(cl-defun papis--cmd (cmd &optional with-stdout)
+  "Run the Papis subcommand CMD.
+
+Return the output as a string when WITH-STDOUT is non-nil."
+  (let* ((lib-flags (if papis-library
+                        (concat "-l " papis-library)
+                      ""))
+         (extra (combine-and-quote-strings papis-extra-options))
+         (sys (if with-stdout
+                  #'shell-command-to-string
+                #'shell-command))
+         (full-cmd (format "%s %s %s %s" papis-program lib-flags extra cmd)))
+    (message full-cmd)
+    (funcall sys
+             full-cmd)))
 
 ;;;; Papis Documents
 
@@ -84,21 +144,6 @@ environment."
 (defun papis--doc-update (doc)
   (let ((folder (papis-doc-get-folder doc)))
     (papis--cmd (concat "update --doc-folder " folder))))
-
-;;;; Issuing commands to the shell
-
-(cl-defun papis--cmd (cmd &optional with-stdout)
-  "Helping function to run papis commands"
-  (let* ((lib-flags (if papis-library
-                        (concat "-l " papis-library)
-                      ""))
-         (sys (if with-stdout
-                  #'shell-command-to-string
-                #'shell-command))
-         (full-cmd (format "%s %s %s" papis-program lib-flags cmd)))
-    (message full-cmd)
-    (funcall sys
-             full-cmd)))
 
 ;;;; Getting document metadata from Papis
 
