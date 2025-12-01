@@ -25,11 +25,11 @@
   :link '(url-link :tag "Github"
           "https://github.com/papis/papis.el"))
 
-(defcustom papis-binary-path
-  "papis"
-  "The binary path for papis.
-   You might have papis installed for instance in some
-   virtual environment"
+(defcustom papis-program "papis"
+  "The path to the Papis program.
+
+You might have Papis installed, for instance, in some virtual
+environment."
   :type 'string
   :group 'papis)
 
@@ -95,7 +95,7 @@
          (sys (if with-stdout
                   #'shell-command-to-string
                 #'shell-command))
-         (full-cmd (format "%s %s %s" papis-binary-path lib-flags cmd)))
+         (full-cmd (format "%s %s %s" papis-program lib-flags cmd)))
     (message full-cmd)
     (funcall sys
              full-cmd)))
