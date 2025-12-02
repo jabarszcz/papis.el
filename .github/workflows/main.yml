@@ -28,7 +28,10 @@ jobs:
 
     - name: Tangle and check
       run: |
-        cp papis.el papis.el.bak
+        # FIXME papis.el is not tangled anymore, but let's keep this
+        # for future tangled files (example configuration)
+
+        #cp papis.el papis.el.bak
         ./tools/tangle README.org
-        test -f papis.el
-        diff papis.el papis.el.bak
+        #test -f papis.el
+        #diff papis.el papis.el.bak

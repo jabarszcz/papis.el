@@ -97,9 +97,7 @@ And to add these kind of lines you can use this function
 
 * Implementation
   :PROPERTIES:
-    :header-args:emacs-lisp: :tangle papis.el
-    :header-args:emacs-lisp+: :comments both
-    :header-args:emacs-lisp+: :results silent
+    :header-args:emacs-lisp: :results silent
   :END:
 
 =papis.el= is written as a literate program.
@@ -156,7 +154,7 @@ You can set the
 
 ***  =papis-library=
 You can set the main library used in papis by setting
-#+begin_src emacs-lisp :tangle no :eval no 
+#+begin_src emacs-lisp :eval no
 (setq papis-library "my-other-library")
 #+end_src
 
@@ -543,7 +541,7 @@ elisp:org-ref-get-pdf-filename-function.
 Therefore, in order to use papis to open the pdf of the referenced
 documents you can set
 
-#+begin_src emacs-lisp :tangle no :eval no
+#+begin_src emacs-lisp :eval no
 (setq org-ref-get-pdf-filename-function
       #'papis-org-ref-get-pdf-filename)
 #+end_src
