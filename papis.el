@@ -3,6 +3,8 @@
 ;; Copyright (C) 2020-2024 Alejandro Gallo
 ;; Copyright (C) 2025 Jean-Alexandre Barszcz
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;; Keywords: Papis, Bibliography
 ;; URL: https://github.com/papis/papis.el
 

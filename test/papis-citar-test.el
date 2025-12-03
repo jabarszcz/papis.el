@@ -1,5 +1,7 @@
 ;;; papis-citar-test.el --- Tests for papis-citar.el -*- lexical-binding: nil -*-
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;; Copyright (C) 2025 Jean-Alexandre Barszcz
 
 ;;; Code:

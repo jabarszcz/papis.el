@@ -2,6 +2,8 @@
 
 ;; Copyright (C) 2025 Jean-Alexandre Barszcz
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;;; Code:
 
 (require 'papis-test-common)

@@ -2,6 +2,8 @@
 
 ;; Copyright (C) 2025 Jean-Alexandre Barszcz
 
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
 ;; Author: Jean-Alexandre Barszcz <jean-alexandre.barszcz@umontreal.ca>
 ;; Version: 0.1
 ;; Package-Requires ((citar "1.2.0") papis)
