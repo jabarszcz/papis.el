@@ -45,6 +45,11 @@ When nil, use the default library configured in the Papis config."
   :type '(repeat string)
   :group 'papis)
 
+(defcustom papis-skip-program-check nil
+  "When non-nil, don't check the Papis program version or runnability."
+  :type 'boolean
+  :group 'papis)
+
 (defcustom papis-read-format-function
   #'papis-default-read-format-function
   "Function taking a papis document (hashmap) and outputing a
@@ -115,6 +120,38 @@ Return the output as a string when WITH-STDOUT is non-nil."
     (message full-cmd)
     (funcall sys
              full-cmd)))
+
+;;;; Checking the papis program and its version
+
+(defvar papis-program-version nil
+  "Papis program version (as a list), if known. See `papis-check-program'.")
+
+(defun papis-check-program (&optional min-version)
+  "Run the Papis program and return its version-list. Error if absent.
+
+When variable `papis-skip-program-check' is non-nil, just return nil
+without running Papis.
+
+If the obtained version is lower than MIN-VERSION, throw an error.
+
+Idempotence: Save the version to variable
+`papis-program-version', to avoid re-running the Papis
+program over and over."
+  (interactive)
+  (unless papis-skip-program-check
+    (unless papis-program-version
+      (setq papis-program-version
+            (let ((output (papis--run-to-string '("--version"))))
+              (version-to-list (car (last (string-split output)))))))
+    (when-let ((version papis-program-version)
+               (min-version (if (stringp min-version)
+                                (version-to-list min-version)
+                              min-version)))
+      (when (version-list-< version min-version)
+        (error
+         (format "Papis program version %S lower than required %S"
+                 version min-version))))
+    papis-program-version))
 
 ;;;; Papis Documents
 

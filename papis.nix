@@ -10,12 +10,14 @@
   pkgs ? import <nixpkgs> {},
   papis ? null,
   emacsPackages ? null,
+  el-mock ? null,
 } @ args :
 let
   lib = pkgs.lib;
   papis = args.papis or pkgs.papis;
   emacsPackages = args.emacsPackages or pkgs.emacsPackages;
   trivialBuild = emacsPackages.trivialBuild;
+  el-mock = args.el-mock or emacsPackages.el-mock;
   papis-el =
     trivialBuild {
       pname = "papis";
@@ -30,7 +32,7 @@ let
         root = ./test;
         fileset = union ./test/papis-test-common.el ./test/papis-test.el;
       };
-      packageRequires = [ papis-el ];
+      packageRequires = [ papis-el el-mock ];
     };
   example-lib = import ./example-lib.nix { inherit (lib) fileset; };
   run-papis-ert-tests =
