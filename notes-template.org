@@ -1,0 +1,5 @@
+#+TITLE: Notes about "{doc[title]}"
+
+TODO [cite:@{doc[ref]}]
+
+#+print_bibliography:
