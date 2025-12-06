@@ -153,6 +153,23 @@ program over and over."
                  version min-version))))
     papis-program-version))
 
+;;;; Getting document metadata from Papis
+
+(defun papis--query-documents (&optional query doc-folder)
+  "Run `papis export' and return the list of documents as hashtables.
+
+Use a QUERY string to let Papis select some documents, or DOC-FOLDER for
+it to search in only one directory."
+  (let ((outbuf (generate-new-buffer " *papis-json-export*"))
+        (cmd `("export" "--format" "json" ,(or query "--all")
+               ,@(when doc-folder (list "--doc-folder" doc-folder)))))
+    (with-current-buffer outbuf
+      (save-excursion (papis--run cmd (list t nil)))
+      (prog1 (json-parse-buffer :array-type 'list
+                                :null-object nil
+                                :false-object nil)
+        (kill-buffer)))))
+
 ;;;; Papis Documents
 
 (defun papis-doc-get-folder (doc)
@@ -181,29 +198,6 @@ program over and over."
 (defun papis--doc-update (doc)
   (let ((folder (papis-doc-get-folder doc)))
     (papis--cmd (concat "update --doc-folder " folder))))
-
-;;;; Getting document metadata from Papis
-
-;; A papis document object is represented in =papis.el=
-;; as a =hashtable=, and the command that turns a query
-;; into a list of hashtables is =papis-query=.
-;; This is done via the papis' =json= exporter, i.e.,
-;; we query python and get a json document with the documents that
-;; emacs reads in.
-
-(defun papis--json-string-to-documents (json-file)
-  (let ((json-object-type 'hash-table)
-        (json-array-type 'list)
-        (json-key-type 'string))
-    (json-read-from-string json-file)))
-
-(cl-defun papis-query (&key query id doc-folder)
-  "Make a general papis query:
-   it returns a list of hashtables where every hashtable is a papis document"
-  (when id
-    (setq query (papis-id-query id)))
-  (papis--json-string-to-documents (papis-json :query query
-                                               :doc-folder doc-folder)))
 
 ;;;; Public Papis commands
 
@@ -290,27 +284,6 @@ Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
     (find-file info)
     (papis-edit-mode)))
 
-;;;; papis-export
-
-(progn
-  (defmacro papis--make-exporter (format-name)
-    `(cl-defun ,(intern (format "papis-%s" format-name))
-         (&key query doc-folder)
-       (let ((outfile (make-temp-file "papis-")))
-         (papis--cmd (format "export --all --format %s %s -o %s"
-                             ,(symbol-name format-name)
-                             (if doc-folder (format "--doc-folder %S" doc-folder)
-                               (format "%S" query))
-                             outfile))
-         (with-current-buffer (find-file-noselect outfile)
-           (prog1 (buffer-string)
-             (kill-buffer))))))
-
-  (papis--make-exporter bibtex)
-  (papis--make-exporter yaml)
-  (papis--make-exporter typist)
-  (papis--make-exporter json))
-
 ;;;; Document completion from the minibuffer
 
 (defun papis-default-read-format-function (doc)
@@ -336,7 +309,7 @@ Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
 
 (defun papis-from-id (papis-id)
   (let* ((query (format "papis_id:%s" papis-id))
-         (results (papis-query :query query)))
+         (results (papis--query-documents query)))
     (pcase (length results)
       (0 (error "No documents found with papis_id '%s'"
                 papis-id))
@@ -355,10 +328,10 @@ Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
                       (dirname (file-name-directory filename))
                       (yaml.info (file-name-concat dirname "info.yaml")))
             (when (file-exists-p yaml.info)
-              (car (papis-query :doc-folder dirname))))))
+              (car (papis--query-documents nil dirname))))))
     ((and (not force-query)
-          (let* ((results (papis-query :query (read-string papis--query-prompt
-                                                           nil 'papis)))
+          (let* ((results (papis--query-documents (read-string papis--query-prompt
+                                                                 nil 'papis)))
                  (formatted-results (mapcar papis-read-format-function results)))
             (cdr (assoc
                   (completing-read "Select an entry: " formatted-results)
@@ -409,7 +382,7 @@ Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
 
 (defun papis-org-ref-get-pdf-filename (key)
     (interactive)
-    (let* ((docs (papis-query (format "ref:'%s'" key)))
+    (let* ((docs (papis--query-documents (format "ref:'%s'" key)))
            (doc (car docs))
            (files (papis--get-file-paths doc)))
       (pcase (length files)
