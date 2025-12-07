@@ -113,17 +113,6 @@
 ;; The cornerstone of papis is opening documents, in emacs
 ;; the command is also available:
 
-(cl-defun papis--update (&key id doc-folder alist)
-  (let (sets)
-    (dolist (pair alist)
-      (push (format "--set %s %S" (car pair) (cdr pair))
-            sets))
-    (papis--cmd (format "update %s %s"
-                        (string-join sets " ")
-                        (if doc-folder
-                            (format "--doc-folder %S" doc-folder)
-                          (format "papis_id:%s" id))))))
-
 (defun papis-browse (doc)
   (interactive (list (papis--read-doc)))
   (let ((url
