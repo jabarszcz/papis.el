@@ -141,6 +141,28 @@ Serves to fake `papis--query-documents' without calling Papis."
    (should (equal (papis-test-normalize-docs (papis-test-query-documents-fake))
                   (papis-test-normalize-docs (papis--query-documents))))))
 
+(defmacro papis-test-do-with-fake (&rest body)
+  "Run BODY with a mock setup for the Papis library"
+  `(with-mock
+     (mock (papis--query-documents) => (papis-test-query-documents-fake))
+     ,@body))
+
+(defun papis-test-get-principia ()
+  "Get Newton's Principia from the library"
+  (let ((docs (papis--query-documents))
+        (pred (lambda (doc) (equal (papis--doc-ref doc)
+                                   "newton1687philosophiae"))))
+    (seq-find pred docs)))
+
+(ert-deftest papis-test-doc-accessors ()
+  (papis-test-do-with-fake
+   (let ((doc (papis-test-get-principia))) ; Covers papis--doc-ref
+     (should (equal (papis--doc-folder doc)
+                    "example-lib/newton1687philosophiae"))
+     (should-not (papis--doc-notes-path doc))
+     (should (equal (papis--doc-file-paths doc)
+                    '("example-lib/newton1687philosophiae/newton1687philosophiae.pdf"))))))
+
 (provide 'papis-test)
 
 ;;; papis-test.el ends here

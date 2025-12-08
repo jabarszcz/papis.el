@@ -170,34 +170,43 @@ it to search in only one directory."
                                 :false-object nil)
         (kill-buffer)))))
 
-;;;; Papis Documents
+;;;; Private Papis documents accessors
 
-(defun papis-doc-get-folder (doc)
-  (papis-doc-get doc "_papis_local_folder"))
-
-(defun papis-doc-id (doc)
-  (let ((id (papis-doc-get doc "papis_id")))
-    (unless id
-      (error "Document '%s' does not have an id!"
-             doc))
-    id))
-
-(defun papis-id-query (doc)
-  (format "papis_id:%s" (papis-doc-id doc)))
-
-(defun papis--get-file-paths (doc)
-  (mapcar (lambda (f) (concat (papis-doc-get-folder doc) "/" f))
-          (papis-doc-get doc "files")))
-
-(defun papis-doc-get (doc key &optional default)
+(defun papis--doc-get (doc key &optional default)
+  "Return the value associated with KEY in DOC's metadata, or DEFAULT."
   (gethash key doc default))
 
-(defun papis--get-ref (doc)
-  (papis-doc-get doc "ref"))
+(defun papis--doc-folder (doc)
+  "Return DOC's directory (relative to the library root)."
+  (papis--doc-get doc "_papis_local_folder"))
 
-(defun papis--doc-update (doc)
-  (let ((folder (papis-doc-get-folder doc)))
-    (papis--cmd (concat "update --doc-folder " folder))))
+(defun papis--doc-ref (doc)
+  "Return DOC's ref (the citation key)."
+  (papis--doc-get doc "ref"))
+
+(defun papis--doc-id (doc)
+  "Return DOC's id in Papis."
+  (papis--doc-get doc "papis_id"))
+
+(defun papis--doc-notes-path (doc)
+  "Return the path to the note file associated with DOC, if it exists."
+  (and-let* ((dir (papis--doc-folder doc))
+             (file (papis--doc-get doc "notes"))
+             (path (file-name-concat dir file)))
+    (and (file-exists-p path) path)))
+
+(defun papis--doc-file-paths (doc)
+  "Return the paths to existing library files associated with DOC."
+  (and-let* ((dir (papis--doc-folder doc))
+             (files (papis--doc-get doc "files")))
+    (mapcan (lambda (file)
+              (let ((path (file-name-concat dir file)))
+                (and (file-exists-p path) (list path))))
+            files)))
+
+(defun papis--doc-query (doc)
+  "Return a string that serves as a query to select DOC in Papis commands."
+  (format "papis_id:%s" (papis--doc-id doc)))
 
 ;;;; Public Papis commands
 
@@ -205,15 +214,15 @@ it to search in only one directory."
   (interactive (list (papis--read-doc)))
   (let ((url
          (cond
-           ((papis-doc-get doc "url" nil))
-           ((when-let ((doi (papis-doc-get doc "doi" nil)))
+           ((papis--doc-get doc "url"))
+           ((when-let ((doi (papis--doc-get doc "doi")))
               (format "https://doi.org/%s" doi)))
            (t (error "Neither url nor doi found in this document.")))))
     (browse-url url)))
 
 (defun papis-open (doc)
   (interactive (list (papis--read-doc)))
-  (let* ((files (papis--get-file-paths doc))
+  (let* ((files (papis--doc-file-paths doc))
          (file (pcase (length files)
                  (1 (car files))
                  (0 (error "Doc has no files"))
@@ -229,28 +238,14 @@ it to search in only one directory."
    The argument of the hook is the respective document."
   :type 'hook)
 
-(defun papis--default-notes-name ()
-  (string-replace "\n" "" (papis--cmd "config notes-name" t)))
+(defun papis--ensured-notes-path (query)
+  "Return the path to the (new) note file for the doc referenced by QUERY.
 
-(defun papis--notes-path (doc)
-  "Return the notes path to the given document.
-   This does not make sure that the notes file exists,
-   it just gets a path that hsould be there."
-  (let ((query (papis-id-query doc)))
-    (papis--cmd (format "list --notes %s"
-                        query)
-                t)))
-
-(defun papis--ensured-notes-path (doc)
-  (let ((maybe-notes (papis-doc-get doc "notes"))
-        (id-query (papis-id-query doc)))
-    (unless maybe-notes
-      (setq maybe-notes (papis--default-notes-name))
-      ;; will this work on windows? someone cares?
-      (papis--cmd (format "edit --notes --editor echo %s" id-query)))
-    (string-replace "\n" ""
-                    (papis--cmd (format "list --notes %s" id-query)
-                                t))))
+Let Papis create the note file at the appropriate path from the note
+template if it doesn't exist."
+  (papis--run-to-string
+   ;; will this work on windows?
+   (list "edit" "--notes" "--editor" "echo" query)))
 
 (defun papis-notes (doc &optional run-hook)
   "Open or create notes for a document DOC.
@@ -258,8 +253,9 @@ it to search in only one directory."
 Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
   (interactive (list (papis--read-doc)
                      current-prefix-arg))
-  (let ((has-notes-p (papis-doc-get doc "notes")))
-    (let ((notes-path (papis--ensured-notes-path doc)))
+  (let ((has-notes-p (papis--doc-notes-path doc)))
+    (let* ((doc-query (papis--doc-query doc))
+           (notes-path (papis--ensured-notes-path doc-query)))
       (when (or (not has-notes-p) run-hook)
         (with-current-buffer (find-file notes-path)
           (run-hook-with-args 'papis-edit-new-notes-hook
@@ -279,7 +275,7 @@ Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
 
 (defun papis-edit (doc)
   (interactive (list (papis--read-doc)))
-  (let* ((folder (papis-doc-get-folder doc))
+  (let* ((folder (papis--doc-folder doc))
          (info (concat folder "/" "info.yaml")))
     (find-file info)
     (papis-edit-mode)))
@@ -289,11 +285,11 @@ Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
 (defun papis-default-read-format-function (doc)
   `(
     ,(format "%s\n\t%s\n\t«%s» +%s %s"
-             (papis-doc-get doc "title")
-             (papis-doc-get doc "author")
-             (papis-doc-get doc "year")
-             (or (papis-doc-get doc "tags") "")
-             (let ((n (papis-doc-get doc "_note"))) (if n (concat ":note " n) "")))
+             (papis--doc-get doc "title")
+             (papis--doc-get doc "author")
+             (papis--doc-get doc "year")
+             (or (papis--doc-get doc "tags") "")
+             (let ((n (papis--doc-get doc "_note"))) (if n (concat ":note " n) "")))
     .
     ,doc))
 
@@ -346,18 +342,18 @@ Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
                          :export #'ol-papis-export
                          :complete (lambda (&optional _arg)
                                      (format "papis:%s"
-                                             (papis-doc-get (papis--read-doc)
+                                             (papis--doc-get (papis--read-doc)
                                                             "papis_id")))
                          :insert-description
                          (lambda (link _desc)
                            (let* ((papis-id (string-replace "papis:"  "" link))
                                   (doc (papis-from-id papis-id)))
-                             (papis-doc-get doc "title"))))
+                             (papis--doc-get doc "title"))))
 
 (defun ol-papis-export (papis-id description format info)
   (let* ((doc (papis-from-id papis-id))
-         (doi (papis-doc-get doc "doi"))
-         (_url (papis-doc-get doc "url")))
+         (doi (papis--doc-get doc "doi"))
+         (_url (papis--doc-get doc "url")))
     (cond
       (doi (org-link-doi-export doi description format info)))))
 
@@ -365,11 +361,11 @@ Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
 
 (defun papis-org-insert-heading (doc)
   (interactive (list (papis--read-doc)))
-  (let ((title (papis-doc-get doc "title"))
-        (author (papis-doc-get doc "author"))
-        (year (papis-doc-get doc "year"))
-        (doi (papis-doc-get doc "doi"))
-        (papis-id (papis-doc-get doc "papis_id")))
+  (let ((title (papis--doc-get doc "title"))
+        (author (papis--doc-get doc "author"))
+        (year (papis--doc-get doc "year"))
+        (doi (papis--doc-get doc "doi"))
+        (papis-id (papis--doc-id doc)))
     (org-insert-heading)
     (insert (format "[[papis:%s][%s]]" papis-id title))
     (org-set-property "PAPIS_ID" papis-id)
@@ -384,7 +380,7 @@ Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
     (interactive)
     (let* ((docs (papis--query-documents (format "ref:'%s'" key)))
            (doc (car docs))
-           (files (papis--get-file-paths doc)))
+           (files (papis--doc-file-paths doc)))
       (pcase (length files)
         (1 (car files))
         (_ (completing-read "" files)))))
@@ -396,7 +392,7 @@ Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
 
 (defun papis-insert-citation (doc)
   (interactive (list (papis--read-doc)))
-  (let* ((ref (papis--get-ref doc)))
+  (let* ((ref (papis--doc-ref doc)))
     (if (fboundp 'citar-insert-citation)
         (citar-insert-citation (list ref))
       (insert (format "[cite:@%s]" ref)))))
