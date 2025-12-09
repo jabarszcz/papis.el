@@ -98,6 +98,7 @@ When MIXSTDERR is t, the returned string also includes the error output."
       (prog1 (string-trim (buffer-string))
         (kill-buffer)))))
 
+;;;###autoload
 (defun papis--run-term (&optional args skip-confirmation)
   "Run the papis program with arguments ARGS in term-mode.
 
@@ -135,6 +136,7 @@ Return the output as a string when WITH-STDOUT is non-nil."
 (defvar papis-program-version nil
   "Papis program version (as a list), if known. See `papis-check-program'.")
 
+;;;###autoload
 (defun papis-check-program (&optional min-version)
   "Run the Papis program and return its version-list. Error if absent.
 
@@ -288,6 +290,7 @@ link/ref at point or the current directory)."
 
 ;;;; Public Papis commands
 
+;;;###autoload
 (defun papis-browse (doc)
   (interactive (list (papis--read-doc)))
   (let ((url
@@ -298,6 +301,7 @@ link/ref at point or the current directory)."
            (t (error "Neither url nor doi found in this document.")))))
     (browse-url url)))
 
+;;;###autoload
 (defun papis-open (doc)
   (interactive (list (papis--read-doc)))
   (let* ((files (papis--doc-file-paths doc))
@@ -307,6 +311,7 @@ link/ref at point or the current directory)."
                  (_ (completing-read "file: " files)))))
     (find-file-other-window file)))
 
+;;;###autoload
 (defun papis-add (&optional url)
   (interactive (list (thing-at-point 'url)))
   (papis--run-term (list "add" url)))
@@ -328,6 +333,7 @@ template if it doesn't exist."
    ;; will this work on windows?
    (list "edit" "--notes" "--editor" "echo" query)))
 
+;;;###autoload
 (defun papis-notes (doc &optional run-hook)
   "Open or create notes for a document DOC.
 
@@ -345,6 +351,7 @@ Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
 
 ;;;; Editing Papis info files
 
+;;;###autoload
 (defun papis-cache-update (folder)
   "Update Papis' cache for FOLDER, or the whole database if FOLDER is nil.
 
@@ -356,10 +363,12 @@ the whole cache."
   (let ((folder-args (when folder (list "--doc-folder" folder))))
     (papis--run (append '("cache" "update") folder-args))))
 
+;;;###autoload
 (define-minor-mode papis-edit-mode
   "Mode for editing papis metadata files."
   :keymap `((,(kbd "C-c C-c") . ,#'papis-cache-update)))
 
+;;;###autoload
 (defun papis-edit (doc)
   (interactive (list (papis--read-doc)))
   (let* ((folder (papis--doc-folder doc))
@@ -403,6 +412,7 @@ the whole cache."
 
 ;; Paper sections
 
+;;;###autoload
 (defun papis-org-insert-heading (doc)
   (interactive (list (papis--read-doc)))
   (let ((title (papis--doc-get doc "title"))
@@ -489,6 +499,7 @@ for d in docs:
   (insert "\n")
   (insert "#+end:"))
 
+;;;###autoload
 (defun papis-extract-citations-into-dblock (&optional bibfile)
   (interactive)
   (if (org-find-dblock "papis-bibtex-refs")
