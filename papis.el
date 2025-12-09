@@ -289,8 +289,7 @@ link/ref at point or the current directory)."
                  (1 (car files))
                  (0 (error "Doc has no files"))
                  (_ (completing-read "file: " files)))))
-    (split-window-horizontally)
-    (find-file file)))
+    (find-file-other-window file)))
 
 ;;;; Notes
 
