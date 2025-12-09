@@ -11,6 +11,7 @@
   papis ? null,
   emacsPackages ? null,
   el-mock ? null,
+  with-simulated-input ? null,
 } @ args :
 let
   lib = pkgs.lib;
@@ -18,6 +19,8 @@ let
   emacsPackages = args.emacsPackages or pkgs.emacsPackages;
   trivialBuild = emacsPackages.trivialBuild;
   el-mock = args.el-mock or emacsPackages.el-mock;
+  with-simulated-input =
+    args.with-simulated-input or emacsPackages.with-simulated-input;
   papis-el =
     trivialBuild {
       pname = "papis";
@@ -32,7 +35,7 @@ let
         root = ./test;
         fileset = union ./test/papis-test-common.el ./test/papis-test.el;
       };
-      packageRequires = [ papis-el el-mock ];
+      packageRequires = [ papis-el el-mock with-simulated-input ];
     };
   example-lib = import ./example-lib.nix { inherit (lib) fileset; };
   run-papis-ert-tests =

@@ -6,6 +6,7 @@
 
 (require 'papis-test-common)
 (require 'el-mock)
+(require 'with-simulated-input)
 
 (ert-deftest papis-test-example-lib-has-its-docs ()
   "Test that Papis uses the example lib by checking for a specific doc."
@@ -162,6 +163,13 @@ Serves to fake `papis--query-documents' without calling Papis."
      (should-not (papis--doc-notes-path doc))
      (should (equal (papis--doc-file-paths doc)
                     '("example-lib/newton1687philosophiae/newton1687philosophiae.pdf"))))))
+
+(ert-deftest papis-test-completion ()
+  (papis-test-do-with-fake
+   (with-simulated-input
+    "Newt C-a SPC RET"
+    (should (equal (papis-test-normalize-json-result (papis--read-doc))
+                   (papis-test-normalize-json-result (papis-test-get-principia)))))))
 
 (provide 'papis-test)
 

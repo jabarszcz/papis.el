@@ -50,18 +50,11 @@ When nil, use the default library configured in the Papis config."
   :type 'boolean
   :group 'papis)
 
-(defcustom papis-read-format-function
-  #'papis-default-read-format-function
+(defcustom papis-completion-format-function
+  #'papis-default-completion-format-function
   "Function taking a papis document (hashmap) and outputing a
-   string representation of it to be fed into the reader."
+   string representation of it to be fed into `completing-read'."
   :type 'function
-  :group 'papis)
-
-(defcustom papis--query-prompt
-  "Papis Query: "
-  "The prompt to show users in order to accept a query
-  "
-  :type 'string
   :group 'papis)
 
 ;;;; Functions to run Papis
@@ -208,6 +201,75 @@ it to search in only one directory."
   "Return a string that serves as a query to select DOC in Papis commands."
   (format "papis_id:%s" (papis--doc-id doc)))
 
+;;;; Document completion from the minibuffer
+
+(defun papis-default-completion-format-function (doc)
+  (format "%4s %-30.30s: %s"
+          (papis--doc-get doc "year")
+          (papis--doc-get doc "author")
+          (papis--doc-get doc "title")))
+
+(defun papis--org-looking-at-link ()
+  "Return the id of the Papis link at point, when in org-mode, or nil."
+  (when (eq major-mode 'org-mode)
+    (let* ((context (org-element-lineage (org-element-context)
+                                         '(link)
+                                         t))
+           (papis-id (org-element-property :path context)))
+      papis-id)))
+
+(defun papis--org-looking-at-ref ()
+  "Return the org-cite reference at point, when in org-mode, or nil."
+  (when (eq major-mode 'org-mode)
+    (let ((context (org-element-lineage (org-element-context)
+                                        '(citation-reference)
+                                        t)))
+      (org-element-property :key context))))
+
+(defun papis--format-candidate (doc)
+  (funcall papis-completion-format-function doc))
+
+(defvar papis--doc-history nil
+  "The history variable for Papis document input. See `papis--read-doc'.")
+
+(defun papis--completing-read (prompt candidates &optional default)
+  "Wrap `completing-read', return the matching value from alist CANDIDATES."
+  (let* ((formatted-candidates-alist
+          (mapcar (lambda (doc) (cons (papis--format-candidate doc) doc))
+                  candidates))
+         (formatted-default
+          (and default (papis--format-candidate default)))
+         (predicate nil) (require-match t) (initial-input nil)
+         (completed-str (completing-read prompt formatted-candidates-alist
+                                         predicate require-match initial-input
+                                         'papis--doc-history
+                                         formatted-default)))
+    (cdr (assoc completed-str formatted-candidates-alist))))
+
+(defun papis--read-doc ()
+  "Let the user choose a document with `completing-read'.
+
+The default document (selected with RET) is set contextually (using the
+link/ref at point or the current directory)."
+  (let* ((docs (papis--query-documents))
+         (papis-id (papis--org-looking-at-link)) ; Point on Papis link?
+         (ref (papis--org-looking-at-ref)) ; Point on org-cite ref?
+         (match-current-p
+          (lambda (doc)
+            (or
+             ;; Point is on a link to this document
+             (and papis-id (equal (papis--doc-id doc) papis-id))
+             ;; Point is on a citation to this document
+             (and ref (equal (papis--doc-ref doc) ref))
+             ;; The current directory is doc's folder
+             (file-equal-p (papis--doc-folder doc) default-directory)))))
+    (if-let* ((default (seq-find match-current-p docs))
+              (formatted-default (papis--format-candidate default))
+              (prompt (format "Choose document (default %s): "
+                              formatted-default)))
+        (papis--completing-read prompt docs default)
+      (papis--completing-read "Choose document: " docs))))
+
 ;;;; Public Papis commands
 
 (defun papis-browse (doc)
@@ -280,28 +342,7 @@ Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
     (find-file info)
     (papis-edit-mode)))
 
-;;;; Document completion from the minibuffer
-
-(defun papis-default-read-format-function (doc)
-  `(
-    ,(format "%s\n\t%s\n\t«%s» +%s %s"
-             (papis--doc-get doc "title")
-             (papis--doc-get doc "author")
-             (papis--doc-get doc "year")
-             (or (papis--doc-get doc "tags") "")
-             (let ((n (papis--doc-get doc "_note"))) (if n (concat ":note " n) "")))
-    .
-    ,doc))
-
-
-(defun papis--org-looking-at-link ()
-  (when (eq major-mode 'org-mode)
-    (let* ((context (org-element-lineage (org-element-context)
-                                         '(link)
-                                         t))
-           ;; (type (org-element-type context))
-           (papis-id (org-element-property :path context)))
-      papis-id)))
+;;;; Org-mode hyperlinks for Papis
 
 (defun papis-from-id (papis-id)
   (let* ((query (format "papis_id:%s" papis-id))
@@ -312,28 +353,6 @@ Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
       (1 (car results))
       (_ (error "Too many documents (%d) found with papis_id '%s'"
                 (length results) papis-id)))))
-
-(defun papis--read-doc (&optional force-query)
-  (cond
-    ;; if in org mode and in org link, return it
-    ((and (not force-query)
-          (papis--org-looking-at-link))
-     (papis-from-id (papis--org-looking-at-link)))
-    ((and (not force-query)
-          (when-let* ((filename (buffer-file-name (current-buffer)))
-                      (dirname (file-name-directory filename))
-                      (yaml.info (file-name-concat dirname "info.yaml")))
-            (when (file-exists-p yaml.info)
-              (car (papis--query-documents nil dirname))))))
-    ((and (not force-query)
-          (let* ((results (papis--query-documents (read-string papis--query-prompt
-                                                                 nil 'papis)))
-                 (formatted-results (mapcar papis-read-format-function results)))
-            (cdr (assoc
-                  (completing-read "Select an entry: " formatted-results)
-                  formatted-results)))))))
-
-;;;; Org-mode hyperlinks for Papis
 
 (require 'ol-doi)
 (org-link-set-parameters "papis"
