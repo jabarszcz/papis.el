@@ -57,6 +57,15 @@ When nil, use the default library configured in the Papis config."
   :type 'function
   :group 'papis)
 
+(defvar-keymap papis-command-map
+  :doc "Keymap for papis commands"
+  "a" #'papis-add
+  "b" #'papis-browse
+  "e" #'papis-edit
+  "n" #'papis-notes
+  "o" #'papis-open
+  "u" #'papis-cache-update)
+
 ;;;; Functions to run Papis
 
 (defun papis--add-options (args)
