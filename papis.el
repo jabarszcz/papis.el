@@ -469,12 +469,8 @@ the whole cache."
        (lambda (r) (org-element-property :key r))
        org-tree))))
 
-(defun papis-exec (python-file &optional arguments)
-  (let ((fmt "exec %s %s"))
-    (papis--cmd (format fmt
-                        python-file
-                        (or arguments ""))
-                t)))
+(defun papis--exec (python-file &optional arguments)
+  (papis--run-to-string (list "exec" python-file arguments)))
 
 (defvar papis--refs-to-bibtex-script
 "
@@ -501,7 +497,7 @@ for d in docs:
     (with-temp-buffer
       (insert papis--refs-to-bibtex-script)
       (write-file py-script))
-    (papis-exec py-script (string-join refs " "))))
+    (papis--exec py-script refs)))
 
 (defun papis-create-papis-bibtex-refs-dblock (bibfile)
   (insert (format "#+begin: papis-bibtex-refs :tangle %s" bibfile))
