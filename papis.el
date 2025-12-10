@@ -66,6 +66,26 @@ When nil, use the default library configured in the Papis config."
   "o" #'papis-open
   "u" #'papis-cache-update)
 
+(defcustom papis-after-open-note-functions
+  #'papis-after-open-note-default
+  "An abnormal hook to run after a note is opened.
+
+Abnormal because it must accept arguments: NEW which is non-nil when the
+note has just been created, and DOC which contains the hashtable
+describing the document.
+
+For example, it can be used to move the cursor to a specific place in
+note templates."
+  :type 'hook
+  :group 'papis)
+
+(defun papis-after-open-note-default (&optional _new)
+  "Move point after the first occurence of \"TODO\" in the note."
+  (search-forward "TODO"
+                  nil ; Don't limit the search
+                  t   ; Don't error when not found
+                  ))
+
 ;;;; Functions to run Papis
 
 (defun papis--add-options (args)
@@ -311,12 +331,6 @@ link/ref at point or the current directory)."
 
 ;;;; Notes
 
-(defcustom papis-edit-new-notes-hook nil
-  "Hook for when a new note file is being edited.
-
-   The argument of the hook is the respective document."
-  :type 'hook)
-
 (defun papis--ensured-notes-path (query)
   "Return the path to the (new) note file for the doc referenced by QUERY.
 
@@ -327,20 +341,18 @@ template if it doesn't exist."
    (list "edit" "--notes" "--editor" "echo" query)))
 
 ;;;###autoload
-(defun papis-notes (doc &optional run-hook)
-  "Open or create notes for a document DOC.
+(defun papis-notes (doc)
+  "Open, and create if necessary, the notes file for a document DOC.
 
-Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
-  (interactive (list (papis--read-doc)
-                     current-prefix-arg))
-  (let ((has-notes-p (papis--doc-notes-path doc)))
+See `papis-after-open-note-functions' for customization."
+  (interactive (list (papis--read-doc)))
+  (let ((has-notes (papis--doc-notes-path doc)))
     (let* ((doc-query (papis--doc-query doc))
            (notes-path (papis--ensured-notes-path doc-query)))
-      (when (or (not has-notes-p) run-hook)
-        (with-current-buffer (find-file notes-path)
-          (run-hook-with-args 'papis-edit-new-notes-hook
-                              doc)))
-      (find-file notes-path))))
+      (find-file notes-path)
+      (run-hook-with-args 'papis-after-open-note-functions
+                          doc
+                          (not has-notes)))))
 
 ;;;; Editing Papis info files
 
