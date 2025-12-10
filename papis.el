@@ -98,6 +98,22 @@ When MIXSTDERR is t, the returned string also includes the error output."
       (prog1 (string-trim (buffer-string))
         (kill-buffer)))))
 
+(defun papis--run-term (&optional args skip-confirmation)
+  "Run the papis program with arguments ARGS in term-mode.
+
+ARGS is the list of arguments passed to the Papis program (sub-command
+included).
+
+Confirm the shell command in the minibuffer unless SKIP-CONFIRMATION is
+non-nil."
+  (interactive)
+  (let ((cmdstr (papis--cmd-str args)))
+    (if skip-confirmation
+        (message cmdstr)
+      (setq cmdstr
+            (read-shell-command "Run papis (like this): " cmdstr)))
+    (term cmdstr)))
+
 (cl-defun papis--cmd (cmd &optional with-stdout)
   "Run the Papis subcommand CMD.
 
@@ -290,6 +306,10 @@ link/ref at point or the current directory)."
                  (0 (error "Doc has no files"))
                  (_ (completing-read "file: " files)))))
     (find-file-other-window file)))
+
+(defun papis-add (&optional url)
+  (interactive (list (thing-at-point 'url)))
+  (papis--run-term (list "add" url)))
 
 ;;;; Notes
 
