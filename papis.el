@@ -124,22 +124,6 @@ non-nil."
             (read-shell-command "Run papis (like this): " cmdstr)))
     (term cmdstr)))
 
-(cl-defun papis--cmd (cmd &optional with-stdout)
-  "Run the Papis subcommand CMD.
-
-Return the output as a string when WITH-STDOUT is non-nil."
-  (let* ((lib-flags (if papis-library
-                        (concat "-l " papis-library)
-                      ""))
-         (extra (combine-and-quote-strings papis-extra-options))
-         (sys (if with-stdout
-                  #'shell-command-to-string
-                #'shell-command))
-         (full-cmd (format "%s %s %s %s" papis-program lib-flags extra cmd)))
-    (message full-cmd)
-    (funcall sys
-             full-cmd)))
-
 ;;;; Checking the papis program and its version
 
 (defvar papis-program-version nil
