@@ -171,6 +171,51 @@ Serves to fake `papis--query-documents' without calling Papis."
     (should (equal (papis-test-normalize-json-result (papis--read-doc))
                    (papis-test-normalize-json-result (papis-test-get-principia)))))))
 
+(ert-deftest papis-test-open ()
+  :tags '(uses-example-library) ; Checks existence of file
+  (papis-test-do-with-fake
+   (let ((doc (papis-test-get-principia)))
+     (with-mock
+       (mock (find-file-other-window
+              "example-lib/newton1687philosophiae/newton1687philosophiae.pdf") :times 1)
+       (papis-open doc)))))
+
+(ert-deftest papis-test-notes ()
+  :tags '(runs-papis uses-example-library)
+  (defvar papis-test-notes-hook-doc)
+  (defvar papis-test-notes-hook-new)
+  (papis-do-with-config
+   (let ;; Dynamic bindings
+       ((papis-after-open-note-functions
+         (lambda (doc new)
+           (setq papis-test-notes-hook-doc doc
+                 papis-test-notes-hook-new new)))
+        (doc (papis-test-get-principia)))
+     (save-window-excursion
+       ;; First time
+       (papis-notes doc)
+       (should (eq papis-test-notes-hook-doc doc))
+       (should papis-test-notes-hook-new)
+       (should (equal (buffer-name (current-buffer)) "notes.org"))
+       (kill-buffer)
+       ;; Second time
+       (setq doc (papis-test-get-principia))
+       (papis-notes doc)
+       (should-not papis-test-notes-hook-new) ; Created the first time
+       (kill-buffer))
+     ;; Teardown
+     (papis--run (list "rm" "--notes" "--force" (papis--doc-query doc))))))
+
+(ert-deftest papis-test-edit ()
+  :tags '(uses-example-library)
+  (papis-test-do-with-fake
+   (let ((doc (papis-test-get-principia)))
+     (save-window-excursion
+       (papis-edit doc)
+       (should papis-edit-mode)
+       (should (equal (buffer-name (current-buffer)) "info.yaml"))
+       (kill-buffer)))))
+
 (provide 'papis-test)
 
 ;;; papis-test.el ends here
