@@ -325,14 +325,20 @@ Whenever RUN-HOOK is non-nil, the hook for the notes will be ran."
 
 ;;;; Editing Papis info files
 
+(defun papis-cache-update (folder)
+  "Update Papis' cache for FOLDER, or the whole database if FOLDER is nil.
+
+When called interactively, FOLDER is taken from variable
+`default-directory', unless a prefix argument is used to force updating
+the whole cache."
+  (interactive (list (unless current-prefix-arg default-directory)))
+  (papis-check-program "0.14")
+  (let ((folder-args (when folder (list "--doc-folder" folder))))
+    (papis--run (append '("cache" "update") folder-args))))
+
 (define-minor-mode papis-edit-mode
-    "General mode for editing papis files"
-  :keymap `((,(kbd "C-c C-c") .
-              ,(defun papis-edit-update-cache (folder)
-                 (interactive (list default-directory))
-                 (message "Updating the cache for %s" folder)
-                 (papis--cmd (format "cache update --doc-folder %s"
-                                     folder))))))
+  "Mode for editing papis metadata files."
+  :keymap `((,(kbd "C-c C-c") . ,#'papis-cache-update)))
 
 (defun papis-edit (doc)
   (interactive (list (papis--read-doc)))
