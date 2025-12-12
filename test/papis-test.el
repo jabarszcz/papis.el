@@ -216,6 +216,16 @@ Serves to fake `papis--query-documents' without calling Papis."
        (should (equal (buffer-name (current-buffer)) "info.yaml"))
        (kill-buffer)))))
 
+(ert-deftest papis-test-org-cite-insert ()
+  :tags '(runs-papis uses-example-library)
+  (papis-do-with-org-cite-config
+   (with-temp-buffer
+     (org-mode)
+     (with-simulated-input
+      "Newt C-a RET RET"
+      (org-cite-insert nil))
+     (should (equal "[cite:@newton1687philosophiae]" (buffer-string))))))
+
 (provide 'papis-test)
 
 ;;; papis-test.el ends here

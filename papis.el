@@ -45,6 +45,11 @@ When nil, use the default library configured in the Papis config."
   :type '(repeat string)
   :group 'papis)
 
+(defcustom papis-export-bibtex-file nil
+  "The file to which we should export the library data in bibtex form."
+  :type 'string
+  :group 'papis)
+
 (defcustom papis-skip-program-check nil
   "When non-nil, don't check the Papis program version or runnability."
   :type 'boolean
@@ -64,7 +69,8 @@ When nil, use the default library configured in the Papis config."
   "e" #'papis-edit
   "n" #'papis-notes
   "o" #'papis-open
-  "u" #'papis-cache-update)
+  "u" #'papis-cache-update
+  "x" #'papis-export-bibtex)
 
 (defcustom papis-after-open-note-functions
   #'papis-after-open-note-default
@@ -302,6 +308,14 @@ link/ref at point or the current directory)."
       (papis--completing-read "Choose document: " docs))))
 
 ;;;; Public Papis commands
+
+;;;###autoload
+(defun papis-export-bibtex (&optional bibfile)
+  "Export the Papis library to BIBFILE or to `papis-export-bibtex-file'."
+  (interactive)
+  (if-let* ((dest (or bibfile papis-export-bibtex-file)))
+      (papis--run '("export" "--all" "--format" "bibtex")
+                  (list :file dest))))
 
 ;;;###autoload
 (defun papis-browse (doc)
