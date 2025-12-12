@@ -470,6 +470,7 @@ the whole cache."
        org-tree))))
 
 (defun papis--exec (python-file &optional arguments)
+  (papis-check-program "0.12")
   (papis--run-to-string (list "exec" python-file arguments)))
 
 (defvar papis--refs-to-bibtex-script
