@@ -1,41 +1,209 @@
-#+title: Papis.el
-
-* Introduction
+#+title: Papis.el: Use your Papis library from Emacs
+#+OPTIONS: todo
 
 [[https://papis.github.io/images/emacs-papis.gif]]
 
-** Motivation
+* Motivation
 
-The main motivation of this package is to make it easy to interact
-with =emacs= and =papis=, with a focus to =org-mode=.
+The main motivation of this package is to use Papis libraries within
+the well-established bibliographic ecosystem in Emacs. In particular,
+the aim is to integrate Papis with =org-cite= (distributed with Emacs)
+and [[https://github.com/emacs-citar/citar][Citar]]. [[https://github.com/jkitchin/org-ref][=org-ref=]] compatibility is partial; contributions
+welcome. =papis.el= should also work well with the modern completion
+stack (=vertico=, =orderless=, etc.).
 
-If possible, we don't want to reinvent the wheel, so this project
-should try to play well with the very good packages like
-=org-citation=, [[https://github.com/jkitchin/org-ref][org-ref]], =org-noter=, =citar=...
+* Installation
 
-** Disclaimer
+There are in fact two packages:
+1. =papis= implements most of the functionality, defines the
+   customization variables and provides user-facing commands.
+2. =papis-citar= provides compatibility with =citar=.
 
-If you're an emacs lisp hacker, feel free to chip in.  Otherwise this
-project should be treated as β software and it might just completely
-change in the future.
+** TODO Release to MELPA
 
-** What is implemented
+Releasing the package on MELPA will make installation easier for
+users.
 
-I have implemented some functions that I use in my day-to-day research
-and worfklow.
+** Install with a Nix configuration from this repository
 
-At some point they will get better documented...
+Add something like this to your nix configuration for emacs:
+
+#+begin_src nix
+{
+  pkgs ? import <nixpkgs> {},
+  papis-el-src ? pkgs.fetchFromGithub {
+    owner = "papis";
+    repo = "papis.el";
+    rev = "master";
+    hash = ""; # Set this to the hash given by nix
+  },
+}:
+let
+  my-emacs-pkg = with pkgs;
+    emacsPackages.withPackages (emacsPackages:
+      let
+        papis-el = callPackage "${papis-el-src}/papis.nix" {
+          inherit pkgs emacsPackages;
+        };
+        papis-citar-el = callPackage "${papis-el-src}/papis-citar.nix" {
+          inherit pkgs emacsPackages papis-el;
+        };
+      in [ papis-el papis-citar-el
+           # ... your other emacs packages
+         ]);
+in
+
+# This line lets you use emacs with papis in a nix-shell:
+pkgs.mkShell { buildInputs = [ my-emacs-pkg ]; }
+
+# Otherwise, use the emacs package in your configuration:
+#   environment.systemPackages = [ my-emacs-pkg ];
+# Or use the emacs service:
+#   services.emacs = { enable = true; package = my-emacs-pkg; };
+#+end_src
+
+Note: Also add Papis to your system packages.
+
+* Basic configuration
+
+Here's a basic configuration for your =.emacs= / =init.el=:
+
+#+begin_src emacs-lisp
+(use-package papis
+  :bind-keymap ("C-c p" . papis-command-map)
+  :config
+  (setq
+   papis-export-bibtex-file
+   (make-temp-file "example-lib" nil ".bib") ; Or path of your choice
+   ;; The bibtex file is for org-cite and citar.
+   org-cite-global-bibliography (list papis-export-bibtex-file)
+   citar-bibliography (list papis-export-bibtex-file))
+  (papis-export-bibtex) ; Export the bibtex to the new temp file.
+  ;; Consider reusing the same bibfile instead, to speed up loading.
+  )
+
+(use-package papis-citar
+  :after citar
+  :config (papis-citar-setup))
+#+end_src
+
+See the ~defcustom~​s in [[./papis.el]] for more configuration options:
+#+begin_src bash :exports results :results list
+grep defcustom papis.el | cut -d " " -f 2
+#+end_src
+
+#+RESULTS:
+- papis-program
+- papis-library
+- papis-extra-options
+- papis-export-bibtex-file
+- papis-skip-program-check
+- papis-completion-format-function
+- papis-after-open-note-functions
+
+* How-to / Commands
+
+** Exporting a bibtex file from your library
+
+Some parts of the current =org-cite= and Citar integrations rely on
+having the bibliographic data available in a =.bib= file. We make this
+easier with the ~papis-export-bibtex~ command (bound to =C-c p x= in
+the basic configuration), which exports your Papis library to the file
+path set in the variable ~papis-export-bibtex-file~.
+
+Add this file to the list ~org-cite-global-bibliography~ for
+=org-cite=, and to the list ~citar-bibliography~ for Citar.
+
+** Insert a citation
+
+To insert a citation from your Papis library, you can either:
+
+- Use ~org-cite-insert~ (usually bound to =C-c C-x @=), with the
+  =org-cite='s ~'basic~ insert processor.
+- Use the same command, but set =org-cite= insert processor to
+  ~'citar~.
+- Use ~citar-insert-citation~.
+
+The first option requires the =org-cite= to access the exported
+bibtex.
+
+** Opening links, notes and PDFs (or other files)
+
+Use ~papis-browse~ (=C-c p b=, for links), ~papis-notes~ (=C-c p n=,
+for notes), or ~papis-open~ (=C-c p o=, for attached files).  Citar
+has comparable commands, but the Papis commands will suggest a
+contextually appropriate default: the document cited at point or, when
+inside a document's directory, that document.
+
+Another way to open a link, note or file related to the citation at
+point is to type =C-c C-o= (~org-open-at-point~), using the ='citar=
+follow processor for org-cite.
+
+*** Creating notes
+
+When calling ~papis-notes~, notes are automatically created in the the
+Papis document's folder with the name and template from your Papis
+configuration. For example, insert the following lines to your Papis
+=config=:
+
+#+begin_src text
+notes-name = notes.org
+notes-template = ./notes-template.org
+#+end_src
+
+...and include the following template at the configured path:
+
+#+begin_src org :tangle ./notes-template.org
+,#+TITLE: Notes about "{doc[title]}"
+
+TODO [cite:@{doc[ref]}].
+
+,#+print_bibliography:
+#+end_src
+
+You can also [[https://www.gnu.org/software/emacs/manual/html_node/elisp/Setting-Hooks.html][add functions]] to the variable
+~papis-after-open-note-functions~, which is an "abnormal" hook,
+because it takes arguments:
+1. ~DOC~ : The ~papis-notes~ function passes in a hashtable containing
+   the document's metadata. The Citar integration doesn't have it on
+   hand, but your hook can obtain it easily with
+   ~papis--query-documents~ and the note's directory.
+2. ~NEW~ : This boolean indicates that the note has just been created,
+   and thus provides an alternative way to fill a template for a new
+   note.
+
+The default ~papis-after-open-note-functions~ jumps to the first
+=TODO= iff there is one.
+
+** Edit a document's metadata (Papis' =info.yaml= file)
+
+The command ~papis-edit~ (=C-c p e=) opens the =info.yaml= file and
+enters the ~papis-edit-mode~, which simply binds ~papis-cache-update~
+to =C-c C-c=.
+
+The command ~papis-cache-update~ (=C-c p u=) makes Papis update its
+database, which caches the metadata from a library's file
+hierarchy. Consider also running ~papis-export-bibtex~ to make changes
+visible to the =org-cite= export processors.
+
+** Adding documents to the library
+
+The ~papis-add~ command (=C-c p a=) allows you to run ~papis add~
+directly from emacs (using ~term-mode~), and fills-in the url at
+point, if there is one.
+
+* Compatibility with other software
+
+** Org-mode links
+
+=papis.el= sets up a type of org-mode link for Papis documents that
+references documents by ID.
 
 ** [[https://melpa.org/#/org-noter][org-noter]] compatibility
 
 We have found that papis works quite well with =org-noter=
-since =org-noter= is quite simply designed.
-You can get away with the following configuration
-
-#+begin_src emacs-lisp
-(defmacro @papis-query ()
-  `(interactive ,papis--query-prompt))
-#+end_src
+since like Papis, it looks for notes in the same directory as the
+annotated document.
 
 When opening a =pdf= file of a papis document you can just type
 =M-x org-noter= and if there is =notes.org= file in there
@@ -43,21 +211,40 @@ then =org-noter= will open a session for you.
 
 Of course your notes file should be an org file, which you can do by
 setting [[https://papis.readthedocs.io/en/latest/configuration.html#config-settings-notes-name][notes-name]] equal to =notes.org= in your papis configuration.
+Set the note file name for =org-noter= in
+~org-noter-default-notes-file-names~ to match.
 
+You can adjust the note template so that it contains a heading with
+the ~NOTER_DOCUMENT~ property set to the document's filename (see
+below). This makes it possible to open =org-noter= from the notes file
+as well.
 
+#+caption: A template linking PDFs for =org-noter=
+#+begin_src org
+,#+TITLE: Notes about "{doc[title]}"
+
+,* Notes
+:PROPERTIES:
+:NOTER_DOCUMENT: {doc[ref]}.pdf
+:END:
+
+TODO [cite:@{doc[ref]}].
+
+,#+print_bibliography:
+#+end_src
 
 ** [[https://github.com/nobiot/org-transclusion][org-transclusion]] compatibility
 
 You can put this into your configuration file in order to let =org-transclusion=
-know about papis
+know about papis:
 
 #+begin_src emacs-lisp
 (require 'cl-lib)
 (defun papis-org-transclusion-add-papis-id (link plist)
   (when (string= "papis" (org-element-property :type link))
     (let* ((id (org-element-property :path link))
-           (doc (papis--from-id id))
-           (notes-path (papis--ensured-notes-path doc))
+           (query (format "papis_id:%s" id))
+           (notes-path (papis--ensured-notes-path query))
            (new-link (with-temp-buffer
                        (insert "file:")
                        (insert notes-path)
@@ -68,7 +255,8 @@ know about papis
             org-transclusion-add-functions)
 #+end_src
 
-and now you can have a document with many notes of a topic and then
+Then, you can transclude multiple notes to a single Org file with
+something like:
 
 #+begin_src org
 ,* Important papers
@@ -77,437 +265,37 @@ and now you can have a document with many notes of a topic and then
 #+end_src
 
 
-And to add these kind of lines you can use this function
+And to add these kind of lines you can use this function:
 
 #+begin_src emacs-lisp
 (defun papis-transclusion-insert (doc)
   (interactive (list (papis--read-doc)))
   (insert "#+transclude: [[papis:")
-  (insert (papis-doc-id doc))
+  (insert (papis--doc-id doc))
   (insert "][")
-  (insert (papis-doc-get doc "title"))
+  (insert (papis--doc-get doc "title"))
   (insert "]]")
   (insert " :expand-links")
   (org-transclusion-add))
 #+end_src
 
-
-
-
-
-* Implementation
-  :PROPERTIES:
-    :header-args:emacs-lisp: :results silent
-  :END:
-
-=papis.el= is written as a literate program.
-
-** Generalities
-
-- We interact with papis through the papis' json exporter.
-- We use ~org-links~ to get information directly from papis.
-
-The libraries that we will need are therefore:
-#+begin_src emacs-lisp :noweb yes
-(require 'ol)
-(require 'json)
-(require 'f)
-
-(defgroup papis nil
-  "Official papis package for emacs"
-  :group 'papis
-  :prefix "papis-"
-  :link '(url-link :tag "Github"
-          "https://github.com/papis/papis.el"))
-#+end_src
-
-** Variables
-
-#+begin_src emacs-lisp
-(defvar papis--temp-output-file nil
-  "This variable holds the papis temporary output file where the json
-  output is dumped")
-
-(defcustom papis-binary-path
-  "papis"
-  "The binary path for papis.
-   You might have papis installed for instance in some
-   virtual environment"
-  :type 'string
-  :group 'papis)
-
-(defcustom papis-read-format-function
-  #'papis-default-read-format-function
-  "Function taking a papis document (hashmap) and outputing a
-   string representation of it to be fed into the reader."
-  :group 'papis)
-
-(defcustom papis--query-prompt
-  "Papis Query: "
-  "The prompt to show users in order to accept a query
-  "
-  :type 'string
-  :group 'papis)
-#+end_src
-
-You can set the
-
-***  =papis-library=
-You can set the main library used in papis by setting
-#+begin_src emacs-lisp :eval no
-(setq papis-library "my-other-library")
-#+end_src
-
- #+begin_src emacs-lisp
-(defcustom papis-library
-  nil
-  "papis library to be used in commands.
-   If it is set to nil then the default library of your system will
-   be used.
-  "
-  :type 'string
-  :group 'papis)
- #+end_src
-
-** Document
-#+begin_src emacs-lisp
-(defun papis-doc-get-folder (doc)
-  (papis-doc-get doc "_papis_local_folder"))
-
-(defun papis-doc-id (doc)
-  (let ((id (papis-doc-get doc "papis_id")))
-    (unless id
-      (error "Document '%s' does not have an id!"
-             doc))
-    id))
-
-(defun papis-id-query (doc)
-  (format "papis_id:%s" (papis-doc-id doc)))
-#+end_src
-
-#+begin_src emacs-lisp
-(defun papis--get-file-paths (doc)
-  (mapcar (lambda (f) (concat (papis-doc-get-folder doc) "/" f))
-          (papis-doc-get doc "files")))
-
-(defun papis-doc-get (doc key &optional default)
-  (gethash key doc default))
-
-(defun papis--get-ref (doc)
-  (papis-doc-get doc "ref"))
-#+end_src
-
-#+begin_src emacs-lisp
-(defun papis--doc-update (doc)
-  (let ((folder (papis-doc-get-folder doc)))
-    (papis--cmd (concat "update --doc-folder " folder))))
-#+end_src
-** Commands
-*** Introduction
-Most papis commands will need a query, the macro =@papis-query= will
-take care of having the same query prompt in all commands.
-#+begin_src emacs-lisp
-
-(defmacro @papis-query ()
-  `(interactive ,papis--query-prompt))
-#+end_src
-
-**** Issuing commands to the shell
- The main interface with papis commands will be =papis--cmd=
- which is a function intended for library writers.
- #+begin_src emacs-lisp
-(cl-defun papis--cmd (cmd &optional with-stdout)
-  "Helping function to run papis commands"
-  (let* ((lib-flags (if papis-library
-                        (concat "-l " papis-library)
-                      ""))
-         (sys (if with-stdout
-                  #'shell-command-to-string
-                #'shell-command))
-         (full-cmd (format "%s %s %s" papis-binary-path lib-flags cmd)))
-    (message full-cmd)
-    (funcall sys
-             full-cmd)))
- #+end_src
-**** =papis-query=
-
-A papis document object is represented in =papis.el=
-as a =hashtable=, and the command that turns a query
-into a list of hashtables is =papis-query=.
-This is done via the papis' =json= exporter, i.e.,
-we query python and get a json document with the documents that
-emacs reads in.
-
- #+begin_src emacs-lisp
-(defun papis--json-string-to-documents (json-file)
-  (let ((json-object-type 'hash-table)
-        (json-array-type 'list)
-        (json-key-type 'string))
-    (json-read-from-string json-file)))
-
-(cl-defun papis-query (&key query id doc-folder)
-  "Make a general papis query:
-   it returns a list of hashtables where every hashtable is a papis document"
-  (when id
-    (setq query (papis-id-query id)))
-  (papis--json-string-to-documents (papis-json :query query
-                                               :doc-folder doc-folder)))
- #+end_src
-*** =papis-open=
-
-The cornerstone of papis is opening documents, in emacs
-the command is also available:
-
-
-#+begin_src emacs-lisp
-(cl-defun papis--update (&key id doc-folder alist)
-  (let (sets)
-    (dolist (pair alist)
-      (push (format "--set %s %S" (car pair) (cdr pair))
-            sets))
-    (papis--cmd (format "update %s %s"
-                        (string-join sets " ")
-                        (if doc-folder
-                            (format "--doc-folder %S" doc-folder)
-                          (format "papis_id:%s" id))))))
-(defun papis-browse (doc)
-  (interactive (list (papis--read-doc)))
-  (let ((url
-         (cond
-           ((papis-doc-get doc "url" nil))
-           ((when-let ((doi (papis-doc-get doc "doi" nil)))
-              (format "https://doi.org/%s" doi))
-            (t (error "Neither url nor doi found in this document."))))))
-    (browse-url url)))
-
-(defun papis-open (doc)
-  (interactive (list (papis--read-doc)))
-  (let* ((files (papis--get-file-paths doc))
-         (file (pcase (length files)
-                 (1 (car files))
-                 (0 (error "Doc has no files"))
-                 (_ (completing-read "file: " files)))))
-    (split-window-horizontally)
-    (find-file file)))
-#+End_src
-*** Notes
-
-#+begin_src emacs-lisp
-(defcustom papis-edit-new-notes-hook nil
-  "Hook for when a new note file is being edited.
-
-   The argument of the hook is the respective document."
-  :type 'hook)
-
-(defun papis--default-notes-name ()
-  (string-replace "\n" "" (papis--cmd "config notes-name" t)))
-
-(defun papis--notes-path (doc)
-  "Return the notes path to the given document.
-   This does not make sure that the notes file exists,
-   it just gets a path that hsould be there."
-  (let ((query (papis-id-query doc)))
-    (papis--cmd (format "list --notes %s"
-                        query)
-                t)))
-
-(defun papis--ensured-notes-path (doc)
-  (let ((maybe-notes (papis-doc-get doc "notes"))
-        (id-query (papis-id-query doc)))
-    (unless maybe-notes
-      (setq maybe-notes (papis--default-notes-name))
-      ;; will this work on windows? someone cares?
-      (papis--cmd (format "edit --notes --editor echo %s" id-query)))
-    (string-replace "\n" ""
-                    (papis--cmd (format "list --notes %s" id-query)
-                                t))))
-
-(defun papis-notes (doc &optional run-hook)
-  """
-  Create notes for a document or open the note
-  DOC is the papis document.
-  Whenever RUN-HOOK is non-nil, the hook for the notes
-  will be ran.
-  """
-  (interactive (list (papis--read-doc)
-                     current-prefix-arg))
-  (let ((has-notes-p (papis-doc-get doc "notes")))
-    (let ((notes-path (papis--ensured-notes-path doc)))
-      (when (or (not has-notes-p) run-hook)
-        (with-current-buffer (find-file notes-path)
-          (run-hook-with-args 'papis-edit-new-notes-hook
-                              doc)))
-      (find-file notes-path))))
-#+end_src
-
-
-*** TODO =papis-edit=
-
-You can edit the info files using =papis-edit=,
-notice that commiting the
-Implement waiting after editing the file like
-#+begin_src emacs-lisp
-(define-minor-mode papis-edit-mode
-    "General mode for editing papis files"
-  :keymap `((,(kbd "C-c C-c") .
-              ,(defun papis-edit-update-cache (folder)
-                 (interactive (list default-directory))
-                 (message "Updating the cache for %s" folder)
-                 (papis--cmd (format "cache update --doc-folder %s"
-                                     folder)))))
-
-  (defvar-local papis-edit-mode-id nil))
-
-(defun papis-edit (doc)
-  (interactive (list (papis--read-doc)))
-  (let* ((folder (papis-doc-get-folder doc))
-         (info (concat folder "/" "info.yaml")))
-    (find-file info)
-    (papis-edit-mode)))
-#+end_src
-
-*** =papis-exec=
-
-#+begin_src emacs-lisp
-(defun papis-exec (python-file &optional arguments)
-  (let ((fmt "exec %s %s"))
-    (papis--cmd (format fmt
-                        python-file
-                        (or arguments ""))
-                t)))
-#+end_src
-
-*** =papis-export=
-
-#+begin_src emacs-lisp
-(progn
-  (defmacro papis--make-exporter (format-name)
-    `(cl-defun ,(intern (format "papis-%s" format-name))
-         (&key query doc-folder)
-       (let ((outfile (make-temp-file "papis-")))
-         (papis--cmd (format "export --all --format %s %s -o %s"
-                             ,(symbol-name format-name)
-                             (if doc-folder (format "--doc-folder %S" doc-folder)
-                               (format "%S" query))
-                             outfile))
-         (with-current-buffer (find-file-noselect outfile)
-           (prog1 (buffer-string)
-             (kill-buffer))))))
-
-  (papis--make-exporter bibtex)
-  (papis--make-exporter yaml)
-  (papis--make-exporter typist)
-  (papis--make-exporter json))
-#+end_src
-** Document reader
-
-The main dynamic searcher used in =papis.el= uses
-the function =papis-default-read-format-function=.
-
-#+begin_src emacs-lisp
-(defun papis-default-read-format-function (doc)
-  `(
-    ,(format "%s\n\t%s\n\t«%s» +%s %s"
-             (papis-doc-get doc "title")
-             (papis-doc-get doc "author")
-             (papis-doc-get doc "year")
-             (or (papis-doc-get doc "tags") "")
-             (let ((n (papis-doc-get doc "_note"))) (if n (concat ":note " n) "")))
-    .
-    ,doc))
-
-
-(defun papis--org-looking-at-link ()
-  (when (eq major-mode 'org-mode)
-    (let* ((context (org-element-lineage (org-element-context)
-                                         '(link)
-                                         t))
-           ;; (type (org-element-type context))
-           (papis-id (org-element-property :path context)))
-      papis-id)))
-#+end_src
-
-the papis reader should be rather understwood as a dwim (do what i mean) reader.
-if you are in =org-mode= and you have the point above a papis link, then
-it will get that paper to do whatever papis action you're planning to do.
-
-#+begin_src emacs-lisp
-(defun papis-from-id (papis-id)
-  (let* ((query (format "papis_id:%s" papis-id))
-         (results (papis-query :query query)))
-    (pcase (length results)
-      (0 (error "No documents found with papis_id '%s'"
-                papis-id))
-      (1 (car results))
-      (_ (error "Too many documents (%d) found with papis_id '%s'"
-                (length results) papis-id)))))
-
-(defun papis--read-doc (&optional force-query)
-  (cond
-    ;; if in org mode and in org link, return it
-    ((and (not force-query)
-          (papis--org-looking-at-link))
-     (papis-from-id (papis--org-looking-at-link)))
-    ((and (not force-query)
-          (let* ((filename (buffer-file-name (current-buffer)))
-                 (dirname (f-dirname filename))
-                 (yaml.info (f-join dirname "info.yaml")))
-            (when (file-exists-p yaml.info)
-              (car (papis-query :doc-folder dirname))))))
-    ((and (not force-query)
-          (let* ((results (papis-query :query (read-string papis--query-prompt
-                                                           nil 'papis)))
-                 (formatted-results (mapcar papis-read-format-function results)))
-            (cdr (assoc
-                  (completing-read "Select an entry: " formatted-results)
-                  formatted-results)))))))
-#+end_src
-
-** Org-links
-*** =papis=
-
-#+begin_src emacs-lisp
-(require 'ol-doi)
-(org-link-set-parameters "papis"
-                         :follow (lambda (papis-id)
-                                   (papis-open (papis-from-id papis-id)))
-                         :export #'ol-papis-export
-                         :complete (lambda (&optional arg)
-                                     (format "papis:%s"
-                                             (papis-doc-get (papis--read-doc)
-                                                            "papis_id")))
-                         :insert-description
-                         (lambda (link desc)
-                           (let* ((papis-id (string-replace "papis:"  "" link))
-                                  (doc (papis-from-id papis-id)))
-                             (papis-doc-get doc "title"))))
-
-(defun ol-papis-export (papis-id description format info)
-  (let* ((doc (papis-from-id papis-id))
-         (doi (papis-doc-get doc "doi"))
-         (url (papis-doc-get doc "url")))
-    (cond
-      (doi (org-link-doi-export doi description format info)))))
-#+end_src
-
-
-
-
 ** Paper sections
+
 When doing research, often you would like to create some notes on every paper
 and write some sections with the section titles being links to the papers
 with some properties so that you can use org-mode's colum mode.
 
-You can use the following function to create a link with properties
+You can add a function like the following to your configuration, to
+create a heading with a link and properties:
 
 #+begin_src emacs-lisp
 (defun papis-org-insert-heading (doc)
   (interactive (list (papis--read-doc)))
-  (let ((title (papis-doc-get doc "title"))
-        (author (papis-doc-get doc "author"))
-        (year (papis-doc-get doc "year"))
-        (doi (papis-doc-get doc "doi"))
-        (papis-id (papis-doc-get doc "papis_id")))
+  (let ((title (papis--doc-get doc "title"))
+        (author (papis--doc-get doc "author"))
+        (year (papis--doc-get doc "year"))
+        (doi (papis--doc-get doc "doi"))
+        (papis-id (papis--doc-id doc)))
     (org-insert-heading)
     (insert (format "[[papis:%s][%s]]" papis-id title))
     (org-set-property "PAPIS_ID" papis-id)
@@ -517,9 +305,8 @@ You can use the following function to create a link with properties
     (org-set-property "DOI" doi)))
 #+end_src
 
-
 A recommendation can be to write as the =COLUMNS=
-variable and the =PROPERTIES= like so
+variable and the =PROPERTIES= like so:
 
 #+begin_example
 #+COLUMNS: %7TODO %5YEAR %10AUTHOR %45TITLE %TAGS
@@ -528,9 +315,8 @@ variable and the =PROPERTIES= like so
 
 and then you can turn on the =org-columns= mode.
 
-
 ** =org-ref= compatibility
-*** Open pdfs
+
 =org-ref= can open the pdf of a publicaction
 from the =cite:my-reference= link, but in the case of papis
 this pdf lives in an isolated folder of its own.
@@ -539,53 +325,12 @@ However in =org-ref= you can customize how you get the pdf
 from the =cite= link through the
 elisp:org-ref-get-pdf-filename-function.
 Therefore, in order to use papis to open the pdf of the referenced
-documents you can set
+documents you can set:
 
 #+begin_src emacs-lisp :eval no
 (setq org-ref-get-pdf-filename-function
       #'papis-org-ref-get-pdf-filename)
 #+end_src
-
-Its implementation is given below:
-#+begin_src emacs-lisp
-(defun papis-org-ref-get-pdf-filename (key)
-    (interactive)
-    (let* ((docs (papis-query (format "ref:'%s'" key)))
-           (doc (car docs))
-           (files (papis--get-file-paths doc)))
-      (pcase (length files)
-        (1 (car files))
-        (_ (completing-read "" files)))))
-#+end_src
-*** Citations
-In general it is recommended to use the citation mechanisms of
-=org-ref=, however, if for some reason you would like to cite
-directly from =papis=, you can use the function
-
-#+begin_src emacs-lisp
-(defun papis-insert-citation (doc)
-  (interactive (list (papis--read-doc)))
-  (let* ((ref (papis--get-ref doc)))
-    (if (fboundp 'citar-insert-citation)
-        (citar-insert-citation (list ref))
-      (insert (format "[cite:@%s]" ref)))))
-#+end_src
-
-and we will need also a way of listing all the keys of the document
-for further functions. I took this from the good =citar= package
-
-#+begin_src emacs-lisp
-
-(defun papis-org-list-keys ()
-  "List citation keys in the org buffer."
-  (let ((org-tree (org-element-parse-buffer)))
-    (delete-dups
-     (org-element-map org-tree 'citation-reference
-       (lambda (r) (org-element-property :key r))
-       org-tree))))
-
-#+end_src
-
 
 ** Bibtex entries
 #+begin_warning
@@ -593,88 +338,23 @@ Note that this needs the command =papis-exec=,
 which is available in papis from version =0.12= onwards.
 #+end_warning
 
-In this section we want to develop a way to generate a bibtex bibliography
-from references appearing in the document currently being edited.
+Use ~papis-extract-citations-into-dblock~ to insert a
+~papis-bibtex-refs~ dynamic block. This block can be dynamically
+updated with the same function or ~org-dblock-update~ (=C-c C-x C-u=)
+to list the bibtex code for all the citations in the buffer.
 
-*** Convert references into bibtex entries
- First we need a script that accepts a list of
+* Testing
 
- #+name: references-to-bibtex-python-script
- #+begin_src python
-import argparse
-import papis.api
-from papis.bibtex import to_bibtex
+This repository contains an [[./example-lib][example library]] that is used for tests,
+along with its [[file:papis.config][Papis configuration]].
 
-parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
-                                 description='')
-parser.add_argument('refs', help='References', action='store', nargs='*')
-args = parser.parse_args()
+Tests for both packages can be run in emacs (see the [[file:test/][source files]]), or
+using nix:
 
-docs = []
-
-for ref in args.refs:
-    docs.extend(papis.api.get_documents_in_lib(library=None, search=ref))
-
-for d in docs:
-    print(to_bibtex(d))
- #+end_src
-
- #+RESULTS: references-to-bibtex-python-script
-
-
- #+begin_src emacs-lisp :noweb no-export
-(defvar papis--refs-to-bibtex-script
-"
-<<references-to-bibtex-python-script>>
-")
- #+end_src
-
- #+begin_src emacs-lisp
-(defun papis--refs-to-bibtex (refs)
-  (let ((py-script (make-temp-file "papis-bibtex-script" nil ".py")))
-    (with-temp-buffer
-      (insert papis--refs-to-bibtex-script)
-      (write-file py-script))
-    (papis-exec py-script (s-join " " refs))))
- #+end_src
-
-
-*** The =papis-bibtex-refs= dynamic block
-
- #+begin_src emacs-lisp
-(defun papis-create-papis-bibtex-refs-dblock (bibfile)
-  (insert (format "#+begin: papis-bibtex-refs :tangle %s" bibfile))
-  (insert "\n")
-  (insert "#+end:"))
-
-(defun papis-extract-citations-into-dblock (&optional bibfile)
-  (interactive)
-  (if (org-find-dblock "papis-bibtex-refs")
-      (progn
-        (org-show-entry)
-        (org-update-dblock))
-    (papis-create-papis-bibtex-refs-dblock
-     (or bibfile (read-file-name "Bib file: " nil "main.bib")))))
- #+end_src
-
- #+begin_src emacs-lisp
-(defun org-dblock-write:papis-bibtex-refs (params)
-  (let ((tangle-file (or (plist-get params :tangle)
-                         (buffer-file-name)))
-        (exports ":exports none"))
-    (insert
-     (format "#+begin_src bibtex %s :tangle %s\n"
-             exports
-             tangle-file)))
-  (let* ((refs (papis-org-list-keys))
-         (queries (mapcar (lambda (r) (format "ref:\"%s\"" r))
-                          refs)))
-    (insert (papis--refs-to-bibtex queries)))
-  (insert "#+end_src\n"))
- #+end_src
-
-** End
-#+begin_src emacs-lisp
-(provide 'papis)
+#+begin_src bash
+nix-build ./papis.nix -A tests
 #+end_src
 
+#+begin_src bash
+nix-build ./papis-citar.nix -A tests
+#+end_src
