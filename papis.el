@@ -421,7 +421,6 @@ the whole cache."
 ;;;; org-ref
 
 (defun papis-org-ref-get-pdf-filename (key)
-    (interactive)
     (let* ((docs (papis--query-documents (format "ref:'%s'" key)))
            (doc (car docs))
            (files (papis--doc-file-paths doc)))
