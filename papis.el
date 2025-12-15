@@ -397,7 +397,7 @@ the whole cache."
 
 ;;;; Org-mode hyperlinks for Papis
 
-(defun papis-from-id (papis-id)
+(defun papis--from-id (papis-id)
   (let* ((query (format "papis_id:%s" papis-id))
          (results (papis--query-documents query)))
     (pcase (length results)
@@ -410,8 +410,8 @@ the whole cache."
 (require 'ol-doi)
 (org-link-set-parameters "papis"
                          :follow (lambda (papis-id)
-                                   (papis-open (papis-from-id papis-id)))
-                         :export #'ol-papis-export
+                                   (papis-open (papis--from-id papis-id)))
+                         :export #'papis--export-link
                          :complete (lambda (&optional _arg)
                                      (format "papis:%s"
                                              (papis--doc-get (papis--read-doc)
@@ -419,11 +419,11 @@ the whole cache."
                          :insert-description
                          (lambda (link _desc)
                            (let* ((papis-id (string-replace "papis:"  "" link))
-                                  (doc (papis-from-id papis-id)))
+                                  (doc (papis--from-id papis-id)))
                              (papis--doc-get doc "title"))))
 
-(defun ol-papis-export (papis-id description format info)
-  (let* ((doc (papis-from-id papis-id))
+(defun papis--export-link (papis-id description format info)
+  (let* ((doc (papis--from-id papis-id))
          (doi (papis--doc-get doc "doi"))
          (_url (papis--doc-get doc "url")))
     (cond
