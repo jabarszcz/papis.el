@@ -429,24 +429,6 @@ the whole cache."
     (cond
       (doi (org-link-doi-export doi description format info)))))
 
-;; Paper sections
-
-;;;###autoload
-(defun papis-org-insert-heading (doc)
-  (interactive (list (papis--read-doc)))
-  (let ((title (papis--doc-get doc "title"))
-        (author (papis--doc-get doc "author"))
-        (year (papis--doc-get doc "year"))
-        (doi (papis--doc-get doc "doi"))
-        (papis-id (papis--doc-id doc)))
-    (org-insert-heading)
-    (insert (format "[[papis:%s][%s]]" papis-id title))
-    (org-set-property "PAPIS_ID" papis-id)
-    (org-set-property "AUTHOR" author)
-    (org-set-property "TITLE" title)
-    (org-set-property "YEAR" (format "%s" year))
-    (org-set-property "DOI" doi)))
-
 ;;;; org-ref
 
 (defun papis-org-ref-get-pdf-filename (key)
