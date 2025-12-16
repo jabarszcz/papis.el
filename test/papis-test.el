@@ -1,0 +1,233 @@
+;;; papis-test.el --- Tests for papis.el -*- lexical-binding: nil -*-
+
+;; Copyright (C) 2025 Jean-Alexandre Barszcz
+
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;;; Code:
+
+(require 'papis-test-common)
+(require 'el-mock)
+(require 'with-simulated-input)
+
+(ert-deftest papis-test-example-lib-has-its-docs ()
+  "Test that Papis uses the example lib by checking for a specific doc."
+  :tags '(runs-papis uses-example-library)
+  (papis-do-with-config
+   (should (member "example-lib/russell1920introduction"
+                   (string-lines
+                    (papis--run-to-string (list "list" "--all")))))))
+
+(ert-deftest papis-test-queries-version-once ()
+  "`papis-check-program' sets the version and only runs Papis once."
+  :tags '(runs-papis)
+  (papis-do-with-config
+   (let ;; dynamic bindings
+       ((papis-program-version nil)
+        (papis-skip-program-check nil))
+     (should (papis-check-program))
+     (should papis-program-version)
+     (should (with-mock
+              (not-called call-process)
+              (papis-check-program))))))
+
+(ert-deftest papis-test-check-program-minimum-version ()
+  "`papis-check-program' errors when requiring a large min version."
+  (with-mock
+   (not-called call-process) ; Don't run Papis; set version manually
+   (let ;; dynamic bindings
+       ((papis-program-version (version-to-list "0.14.1"))
+        (papis-skip-program-check nil))
+     (should (papis-check-program "0.11"))
+     (should-error (papis-check-program "1000000")))))
+
+(ert-deftest papis-test-check-program-errors-without-program ()
+  (let ;; dynamic bindings
+      ((papis-program "non-existent-program"))
+    (should-error (papis-check-program))))
+
+(defun papis-test-export-json ()
+  "Helper for the characterization the Papis export output."
+  (papis-do-with-config
+   (papis--run-to-string '("export" "--format" "json" "--all"))))
+
+(defconst papis-test-golden-json
+  (progn
+    ` (let ; example-lib's path is relative to the repo root
+          ((default-directory (expand-file-name "..")))
+        (print (papis-test-export-json) ; C-x C-e after next line
+               (current-buffer)))
+"[
+  {
+    \"_papis_local_folder\": \"example-lib/newton1687philosophiae\",
+    \"author\": \"Newton, Isaac\",
+    \"author_list\": [
+      {
+        \"family\": \"Newton\",
+        \"given\": \"Isaac\"
+      }
+    ],
+    \"files\": [
+      \"newton1687philosophiae.pdf\"
+    ],
+    \"papis_id\": \"d6aa5c0850042fb30753c2dfae8ac9ad\",
+    \"publisher\": \"William Dawson \\\\& Sons\",
+    \"ref\": \"newton1687philosophiae\",
+    \"time-added\": \"2025-12-03-23:53:24\",
+    \"title\": \"Philosophiae naturalis principia mathematica\",
+    \"type\": \"book\",
+    \"url\": \"https://www.gutenberg.org/ebooks/28233\",
+    \"year\": \"1687\"
+  },
+  {
+    \"_papis_local_folder\": \"example-lib/russell1920introduction\",
+    \"author\": \"Russell, Bertrand\",
+    \"author_list\": [
+      {
+        \"family\": \"Russell\",
+        \"given\": \"Bertrand\"
+      }
+    ],
+    \"files\": [
+      \"russell1920introduction.epub\"
+    ],
+    \"lccn\": \"25003630\",
+    \"notes\": \"notes.org\",
+    \"papis_id\": \"0b95c29305e4a0489922524c8852ed9a\",
+    \"publisher\": \"Allen \\\\& Unwin\",
+    \"ref\": \"russell1920introduction\",
+    \"series\": \"Library of philosophy\",
+    \"time-added\": \"2025-12-03-23:41:12\",
+    \"title\": \"Introduction to Mathematical Philosophy\",
+    \"type\": \"book\",
+    \"url\": \"https://www.gutenberg.org/ebooks/28233\",
+    \"year\": \"1920\"
+  }
+]"
+  )
+  "The string resulting from a JSON export of the example library.
+
+Update this when it changes. It serves as a form of characterization
+test, and also makes it possible to run a few tests without querying
+Papis.")
+
+(defun papis-test-normalize-json-result (object)
+  "Normalize the results from JSON parsing to compare them with `equal'.
+
+In particular, recurse down the OBJECT to replace hashtables with sorted
+assoc lists."
+  (cond ((hash-table-p object)
+         (sort (map-apply (lambda (k v)
+                            (cons k (papis-test-normalize-json-result v)))
+                          object)))
+        ((proper-list-p object)
+         (mapcar #'papis-test-normalize-json-result object))
+        (t object)))
+
+(defun papis-test-normalize-docs (docs)
+  "Normalize the set of DOCS by normalizing each and sorting them."
+  (sort (mapcar #'papis-test-normalize-json-result docs)))
+
+(defun papis-test-query-documents-fake ()
+  "Get the set of documents from `papis-test-golden-json'.
+
+Serves to fake `papis--query-documents' without calling Papis."
+  (json-parse-string papis-test-golden-json
+                     :array-type 'list
+                     :null-object nil
+                     :false-object nil))
+
+(ert-deftest papis-test-check-golden-library-documents ()
+  "Check that variable `papis-test-golden-json' is current."
+  :tags '(runs-papis uses-example-library)
+  (papis-do-with-config
+   (should (equal (papis-test-normalize-docs (papis-test-query-documents-fake))
+                  (papis-test-normalize-docs (papis--query-documents))))))
+
+(defmacro papis-test-do-with-fake (&rest body)
+  "Run BODY with a mock setup for the Papis library"
+  `(with-mock
+     (mock (papis--query-documents) => (papis-test-query-documents-fake))
+     ,@body))
+
+(defun papis-test-get-principia ()
+  "Get Newton's Principia from the library"
+  (let ((docs (papis--query-documents))
+        (pred (lambda (doc) (equal (papis--doc-ref doc)
+                                   "newton1687philosophiae"))))
+    (seq-find pred docs)))
+
+(ert-deftest papis-test-doc-accessors ()
+  (papis-test-do-with-fake
+   (let ((doc (papis-test-get-principia))) ; Covers papis--doc-ref
+     (should (equal (papis--doc-folder doc)
+                    "example-lib/newton1687philosophiae"))
+     (should-not (papis--doc-notes-path doc))
+     (should (equal (papis--doc-file-paths doc)
+                    '("example-lib/newton1687philosophiae/newton1687philosophiae.pdf"))))))
+
+(ert-deftest papis-test-completion ()
+  (papis-test-do-with-fake
+   (with-simulated-input
+    "Newt C-a SPC RET"
+    (should (equal (papis-test-normalize-json-result (papis--read-doc))
+                   (papis-test-normalize-json-result (papis-test-get-principia)))))))
+
+(ert-deftest papis-test-open ()
+  :tags '(uses-example-library) ; Checks existence of file
+  (papis-test-do-with-fake
+   (let ((doc (papis-test-get-principia)))
+     (with-mock
+       (mock (find-file-other-window
+              "example-lib/newton1687philosophiae/newton1687philosophiae.pdf") :times 1)
+       (papis-open doc)))))
+
+(ert-deftest papis-test-notes ()
+  :tags '(runs-papis uses-example-library)
+  (defvar papis-test-notes-hook-doc)
+  (defvar papis-test-notes-hook-new)
+  (papis-do-with-config
+   (let ;; Dynamic bindings
+       ((papis-after-open-note-functions
+         (lambda (doc new)
+           (setq papis-test-notes-hook-doc doc
+                 papis-test-notes-hook-new new)))
+        (doc (papis-test-get-principia)))
+     (save-window-excursion
+       ;; First time
+       (papis-notes doc)
+       (should (eq papis-test-notes-hook-doc doc))
+       (should papis-test-notes-hook-new)
+       (should (equal (buffer-name (current-buffer)) "notes.org"))
+       (kill-buffer)
+       ;; Second time
+       (setq doc (papis-test-get-principia))
+       (papis-notes doc)
+       (should-not papis-test-notes-hook-new) ; Created the first time
+       (kill-buffer))
+     ;; Teardown
+     (papis--run (list "rm" "--notes" "--force" (papis--doc-query doc))))))
+
+(ert-deftest papis-test-edit ()
+  :tags '(uses-example-library)
+  (papis-test-do-with-fake
+   (let ((doc (papis-test-get-principia)))
+     (save-window-excursion
+       (papis-edit doc)
+       (should papis-edit-mode)
+       (should (equal (buffer-name (current-buffer)) "info.yaml"))
+       (kill-buffer)))))
+
+(ert-deftest papis-test-org-cite-insert ()
+  :tags '(runs-papis uses-example-library)
+  (papis-do-with-org-cite-config
+   (with-temp-buffer
+     (org-mode)
+     (with-simulated-input
+      "Newt C-a RET RET"
+      (org-cite-insert nil))
+     (should (equal "[cite:@newton1687philosophiae]" (buffer-string))))))
+
+(provide 'papis-test)
+
+;;; papis-test.el ends here

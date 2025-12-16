@@ -1,345 +1,407 @@
-;; Generalities
+;; papis.el --- Use Papis from emacs -*- lexical-binding: t; -*-
 
-;; - We interact with papis through the papis' json exporter.
-;; - We use ~org-links~ to get information directly from papis.
+;; Copyright (C) 2020-2024 Alejandro Gallo
+;; Copyright (C) 2025 Jean-Alexandre Barszcz
 
-;; The libraries that we will need are therefore:
+;; SPDX-License-Identifier: GPL-3.0-or-later
 
-;; [[file:README.org::*Generalities][Generalities:1]]
+;; Keywords: Papis, Bibliography
+;; URL: https://github.com/papis/papis.el
+
+;;; Commentary:
+
+;; TODO
+
+;;; Code:
+
 (require 'ol)
+(require 'org-element)
 (require 'json)
-(require 'f)
+
+;;;; Customization
 
 (defgroup papis nil
-  "Official papis package for emacs"
-  :group 'papis
+  "Official Papis package for Emacs."
+  :group 'external
   :prefix "papis-"
   :link '(url-link :tag "Github"
           "https://github.com/papis/papis.el"))
-;; Generalities:1 ends here
 
-;; Variables
+(defcustom papis-program "papis"
+  "The path to the Papis program.
 
-
-;; [[file:README.org::*Variables][Variables:1]]
-(defvar papis--temp-output-file nil
-  "This variable holds the papis temporary output file where the json
-  output is dumped")
-
-(defcustom papis-binary-path
-  "papis"
-  "The binary path for papis.
-   You might have papis installed for instance in some
-   virtual environment"
+You might have Papis installed, for instance, in some virtual
+environment."
   :type 'string
   :group 'papis)
 
-(defcustom papis-read-format-function
-  #'papis-default-read-format-function
+(defcustom papis-library nil
+  "Papis library to be used in commands.
+
+When nil, use the default library configured in the Papis config."
+  :type 'string
+  :group 'papis)
+
+(defcustom papis-extra-options nil
+  "Additional options for papis commands."
+  :type '(repeat string)
+  :group 'papis)
+
+(defcustom papis-export-bibtex-file nil
+  "The file to which we should export the library data in bibtex form."
+  :type 'string
+  :group 'papis)
+
+(defcustom papis-skip-program-check nil
+  "When non-nil, don't check the Papis program version or runnability."
+  :type 'boolean
+  :group 'papis)
+
+(defcustom papis-completion-format-function
+  #'papis-default-completion-format-function
   "Function taking a papis document (hashmap) and outputing a
-   string representation of it to be fed into the reader."
+   string representation of it to be fed into `completing-read'."
+  :type 'function
   :group 'papis)
 
-(defcustom papis--query-prompt
-  "Papis Query: "
-  "The prompt to show users in order to accept a query
-  "
-  :type 'string
+(defvar-keymap papis-command-map
+  :doc "Keymap for papis commands"
+  "a" #'papis-add
+  "b" #'papis-browse
+  "e" #'papis-edit
+  "n" #'papis-notes
+  "o" #'papis-open
+  "u" #'papis-cache-update
+  "x" #'papis-export-bibtex)
+
+(defcustom papis-after-open-note-functions
+  #'papis-after-open-note-default
+  "An abnormal hook to run after a note is opened.
+
+Abnormal because it must accept arguments: NEW which is non-nil when the
+note has just been created, and DOC which contains the hashtable
+describing the document.
+
+For example, it can be used to move the cursor to a specific place in
+note templates."
+  :type 'hook
   :group 'papis)
-;; Variables:1 ends here
 
-;; [[file:README.org::*=papis-library=][=papis-library=:2]]
-(defcustom papis-library
-  nil
-  "papis library to be used in commands.
-   If it is set to nil then the default library of your system will
-   be used.
-  "
-  :type 'string
-  :group 'papis)
-;; =papis-library=:2 ends here
+(defun papis-after-open-note-default (&optional _new)
+  "Move point after the first occurence of \"TODO\" in the note."
+  (search-forward "TODO"
+                  nil ; Don't limit the search
+                  t   ; Don't error when not found
+                  ))
 
-;; Document
+;;;; Functions to run Papis
 
-;; [[file:README.org::*Document][Document:1]]
-(defun papis-doc-get-folder (doc)
-  (papis-doc-get doc "_papis_local_folder"))
+(defun papis--add-options (args)
+  "Append options to the arguments list ARGS passed to Papis.
 
-(defun papis-doc-id (doc)
-  (let ((id (papis-doc-get doc "papis_id")))
-    (unless id
-      (error "Document '%s' does not have an id!"
-             doc))
-    id))
+The additional options are configured in the variable `papis-library'
+and the variable `papis-extra-options'."
+  (let ((libopt (when papis-library (list "-l" papis-library))))
+    (append libopt papis-extra-options args)))
 
-(defun papis-id-query (doc)
-  (format "papis_id:%s" (papis-doc-id doc)))
-;; Document:1 ends here
+(defun papis--cmd-str (args)
+  "Return the string for the command running Papis with ARGS."
+  (let* ((cmd papis-program)
+         (args (papis--add-options args)))
+    (combine-and-quote-strings (cons cmd args))))
 
-;; [[file:README.org::*Document][Document:2]]
-(defun papis--get-file-paths (doc)
-  (mapcar (lambda (f) (concat (papis-doc-get-folder doc) "/" f))
-          (papis-doc-get doc "files")))
+(defun papis--run (args &optional destination)
+  "Run the papis program with arguments ARGS.
 
-(defun papis-doc-get (doc key &optional default)
+ARGS is the list of arguments passed to the Papis program (sub-command
+included).
+
+DESTINATION uses the same format as `call-process'."
+  (let ((cmd papis-program)
+        (all-args (papis--add-options args)))
+    (message (papis--cmd-str args))
+    (apply 'call-process cmd nil destination nil all-args)))
+
+(defun papis--run-to-string (args &optional mixstderr)
+  "Run the Papis program with ARGS, and copy the output to a string.
+
+ARGS is the list of arguments passed to the Papis program (sub-command
+included).
+
+When MIXSTDERR is t, the returned string also includes the error output."
+  (let ((outbuf (generate-new-buffer " *papis-output*")))
+    (with-current-buffer outbuf
+      (papis--run args (list outbuf mixstderr))
+      (prog1 (string-trim (buffer-string))
+        (kill-buffer)))))
+
+;;;###autoload
+(defun papis--run-term (&optional args skip-confirmation)
+  "Run the papis program with arguments ARGS in term-mode.
+
+ARGS is the list of arguments passed to the Papis program (sub-command
+included).
+
+Confirm the shell command in the minibuffer unless SKIP-CONFIRMATION is
+non-nil."
+  (interactive)
+  (let ((cmdstr (papis--cmd-str args)))
+    (if skip-confirmation
+        (message cmdstr)
+      (setq cmdstr
+            (read-shell-command "Run papis (like this): " cmdstr)))
+    (term cmdstr)))
+
+;;;; Checking the papis program and its version
+
+(defvar papis-program-version nil
+  "Papis program version (as a list), if known. See `papis-check-program'.")
+
+;;;###autoload
+(defun papis-check-program (&optional min-version)
+  "Run the Papis program and return its version-list. Error if absent.
+
+When variable `papis-skip-program-check' is non-nil, just return nil
+without running Papis.
+
+If the obtained version is lower than MIN-VERSION, throw an error.
+
+Idempotence: Save the version to variable
+`papis-program-version', to avoid re-running the Papis
+program over and over."
+  (interactive)
+  (unless papis-skip-program-check
+    (unless papis-program-version
+      (setq papis-program-version
+            (let ((output (papis--run-to-string '("--version"))))
+              (version-to-list (car (last (string-split output)))))))
+    (when-let ((version papis-program-version)
+               (min-version (if (stringp min-version)
+                                (version-to-list min-version)
+                              min-version)))
+      (when (version-list-< version min-version)
+        (error
+         (format "Papis program version %S lower than required %S"
+                 version min-version))))
+    papis-program-version))
+
+;;;; Getting document metadata from Papis
+
+(defun papis--query-documents (&optional query doc-folder)
+  "Run `papis export' and return the list of documents as hashtables.
+
+Use a QUERY string to let Papis select some documents, or DOC-FOLDER for
+it to search in only one directory."
+  (let ((outbuf (generate-new-buffer " *papis-json-export*"))
+        (cmd `("export" "--format" "json" ,(or query "--all")
+               ,@(when doc-folder (list "--doc-folder" doc-folder)))))
+    (with-current-buffer outbuf
+      (save-excursion (papis--run cmd (list t nil)))
+      (prog1 (json-parse-buffer :array-type 'list
+                                :null-object nil
+                                :false-object nil)
+        (kill-buffer)))))
+
+;;;; Private Papis documents accessors
+
+(defun papis--doc-get (doc key &optional default)
+  "Return the value associated with KEY in DOC's metadata, or DEFAULT."
   (gethash key doc default))
 
-(defun papis--get-ref (doc)
-  (papis-doc-get doc "ref"))
-;; Document:2 ends here
+(defun papis--doc-folder (doc)
+  "Return DOC's directory (relative to the library root)."
+  (papis--doc-get doc "_papis_local_folder"))
 
-;; [[file:README.org::*Document][Document:3]]
-(defun papis--doc-update (doc)
-  (let ((folder (papis-doc-get-folder doc)))
-    (papis--cmd (concat "update --doc-folder " folder))))
-;; Document:3 ends here
+(defun papis--doc-ref (doc)
+  "Return DOC's ref (the citation key)."
+  (papis--doc-get doc "ref"))
 
-;; Introduction
-;; Most papis commands will need a query, the macro =@papis-query= will
-;; take care of having the same query prompt in all commands.
+(defun papis--doc-id (doc)
+  "Return DOC's id in Papis."
+  (papis--doc-get doc "papis_id"))
 
-;; [[file:README.org::*Introduction][Introduction:1]]
-(defmacro @papis-query ()
-  `(interactive ,papis--query-prompt))
-;; Introduction:1 ends here
+(defun papis--doc-notes-path (doc)
+  "Return the path to the note file associated with DOC, if it exists."
+  (and-let* ((dir (papis--doc-folder doc))
+             (file (papis--doc-get doc "notes"))
+             (path (file-name-concat dir file)))
+    (and (file-exists-p path) path)))
 
-;; Issuing commands to the shell
-;;  The main interface with papis commands will be =papis--cmd=
-;;  which is a function intended for library writers.
+(defun papis--doc-file-paths (doc)
+  "Return the paths to existing library files associated with DOC."
+  (and-let* ((dir (papis--doc-folder doc))
+             (files (papis--doc-get doc "files")))
+    (mapcan (lambda (file)
+              (let ((path (file-name-concat dir file)))
+                (and (file-exists-p path) (list path))))
+            files)))
 
-;; [[file:README.org::*Issuing commands to the shell][Issuing commands to the shell:1]]
-(cl-defun papis--cmd (cmd &optional with-stdout)
-  "Helping function to run papis commands"
-  (let* ((lib-flags (if papis-library
-                        (concat "-l " papis-library)
-                      ""))
-         (sys (if with-stdout
-                  #'shell-command-to-string
-                #'shell-command))
-         (full-cmd (format "%s %s %s" papis-binary-path lib-flags cmd)))
-    (message full-cmd)
-    (funcall sys
-             full-cmd)))
-;; Issuing commands to the shell:1 ends here
+(defun papis--doc-query (doc)
+  "Return a string that serves as a query to select DOC in Papis commands."
+  (format "papis_id:%s" (papis--doc-id doc)))
 
-;; =papis-query=
+;;;; Document completion from the minibuffer
 
-;; A papis document object is represented in =papis.el=
-;; as a =hashtable=, and the command that turns a query
-;; into a list of hashtables is =papis-query=.
-;; This is done via the papis' =json= exporter, i.e.,
-;; we query python and get a json document with the documents that
-;; emacs reads in.
-
-
-;; [[file:README.org::*=papis-query=][=papis-query=:1]]
-(defun papis--json-string-to-documents (json-file)
-  (let ((json-object-type 'hash-table)
-        (json-array-type 'list)
-        (json-key-type 'string))
-    (json-read-from-string json-file)))
-
-(cl-defun papis-query (&key query id doc-folder)
-  "Make a general papis query:
-   it returns a list of hashtables where every hashtable is a papis document"
-  (when id
-    (setq query (papis-id-query id)))
-  (papis--json-string-to-documents (papis-json :query query
-                                               :doc-folder doc-folder)))
-;; =papis-query=:1 ends here
-
-;; =papis-open=
-
-;; The cornerstone of papis is opening documents, in emacs
-;; the command is also available:
-
-
-
-;; [[file:README.org::*=papis-open=][=papis-open=:1]]
-(cl-defun papis--update (&key id doc-folder alist)
-  (let (sets)
-    (dolist (pair alist)
-      (push (format "--set %s %S" (car pair) (cdr pair))
-            sets))
-    (papis--cmd (format "update %s %s"
-                        (string-join sets " ")
-                        (if doc-folder
-                            (format "--doc-folder %S" doc-folder)
-                          (format "papis_id:%s" id))))))
-(defun papis-browse (doc)
-  (interactive (list (papis--read-doc)))
-  (let ((url
-         (cond
-           ((papis-doc-get doc "url" nil))
-           ((when-let ((doi (papis-doc-get doc "doi" nil)))
-              (format "https://doi.org/%s" doi))
-            (t (error "Neither url nor doi found in this document."))))))
-    (browse-url url)))
-
-(defun papis-open (doc)
-  (interactive (list (papis--read-doc)))
-  (let* ((files (papis--get-file-paths doc))
-         (file (pcase (length files)
-                 (1 (car files))
-                 (0 (error "Doc has no files"))
-                 (_ (completing-read "file: " files)))))
-    (split-window-horizontally)
-    (find-file file)))
-;; =papis-open=:1 ends here
-
-;; Notes
-
-
-;; [[file:README.org::*Notes][Notes:1]]
-(defcustom papis-edit-new-notes-hook nil
-  "Hook for when a new note file is being edited.
-
-   The argument of the hook is the respective document."
-  :type 'hook)
-
-(defun papis--default-notes-name ()
-  (string-replace "\n" "" (papis--cmd "config notes-name" t)))
-
-(defun papis--notes-path (doc)
-  "Return the notes path to the given document.
-   This does not make sure that the notes file exists,
-   it just gets a path that hsould be there."
-  (let ((query (papis-id-query doc)))
-    (papis--cmd (format "list --notes %s"
-                        query)
-                t)))
-
-(defun papis--ensured-notes-path (doc)
-  (let ((maybe-notes (papis-doc-get doc "notes"))
-        (id-query (papis-id-query doc)))
-    (unless maybe-notes
-      (setq maybe-notes (papis--default-notes-name))
-      ;; will this work on windows? someone cares?
-      (papis--cmd (format "edit --notes --editor echo %s" id-query)))
-    (string-replace "\n" ""
-                    (papis--cmd (format "list --notes %s" id-query)
-                                t))))
-
-(defun papis-notes (doc &optional run-hook)
-  """
-  Create notes for a document or open the note
-  DOC is the papis document.
-  Whenever RUN-HOOK is non-nil, the hook for the notes
-  will be ran.
-  """
-  (interactive (list (papis--read-doc)
-                     current-prefix-arg))
-  (let ((has-notes-p (papis-doc-get doc "notes")))
-    (let ((notes-path (papis--ensured-notes-path doc)))
-      (when (or (not has-notes-p) run-hook)
-        (with-current-buffer (find-file notes-path)
-          (run-hook-with-args 'papis-edit-new-notes-hook
-                              doc)))
-      (find-file notes-path))))
-;; Notes:1 ends here
-
-;; TODO =papis-edit=
-
-;; You can edit the info files using =papis-edit=,
-;; notice that commiting the
-;; Implement waiting after editing the file like
-
-;; [[file:README.org::*=papis-edit=][=papis-edit=:1]]
-(define-minor-mode papis-edit-mode
-    "General mode for editing papis files"
-  :keymap `((,(kbd "C-c C-c") .
-              ,(defun papis-edit-update-cache (folder)
-                 (interactive (list default-directory))
-                 (message "Updating the cache for %s" folder)
-                 (papis--cmd (format "cache update --doc-folder %s"
-                                     folder)))))
-
-  (defvar-local papis-edit-mode-id nil))
-
-(defun papis-edit (doc)
-  (interactive (list (papis--read-doc)))
-  (let* ((folder (papis-doc-get-folder doc))
-         (info (concat folder "/" "info.yaml")))
-    (find-file info)
-    (papis-edit-mode)))
-;; =papis-edit=:1 ends here
-
-;; =papis-exec=
-
-
-;; [[file:README.org::*=papis-exec=][=papis-exec=:1]]
-(defun papis-exec (python-file &optional arguments)
-  (let ((fmt "exec %s %s"))
-    (papis--cmd (format fmt
-                        python-file
-                        (or arguments ""))
-                t)))
-;; =papis-exec=:1 ends here
-
-;; =papis-export=
-
-
-;; [[file:README.org::*=papis-export=][=papis-export=:1]]
-(progn
-  (defmacro papis--make-exporter (format-name)
-    `(cl-defun ,(intern (format "papis-%s" format-name))
-         (&key query doc-folder)
-       (let ((outfile (make-temp-file "papis-")))
-         (papis--cmd (format "export --all --format %s %s -o %s"
-                             ,(symbol-name format-name)
-                             (if doc-folder (format "--doc-folder %S" doc-folder)
-                               (format "%S" query))
-                             outfile))
-         (with-current-buffer (find-file-noselect outfile)
-           (prog1 (buffer-string)
-             (kill-buffer))))))
-
-  (papis--make-exporter bibtex)
-  (papis--make-exporter yaml)
-  (papis--make-exporter typist)
-  (papis--make-exporter json))
-;; =papis-export=:1 ends here
-
-;; Document reader
-
-;; The main dynamic searcher used in =papis.el= uses
-;; the function =papis-default-read-format-function=.
-
-
-;; [[file:README.org::*Document reader][Document reader:1]]
-(defun papis-default-read-format-function (doc)
-  `(
-    ,(format "%s\n\t%s\n\t«%s» +%s %s"
-             (papis-doc-get doc "title")
-             (papis-doc-get doc "author")
-             (papis-doc-get doc "year")
-             (or (papis-doc-get doc "tags") "")
-             (let ((n (papis-doc-get doc "_note"))) (if n (concat ":note " n) "")))
-    .
-    ,doc))
-
+(defun papis-default-completion-format-function (doc)
+  (format "%4s %-30.30s: %s"
+          (papis--doc-get doc "year")
+          (papis--doc-get doc "author")
+          (papis--doc-get doc "title")))
 
 (defun papis--org-looking-at-link ()
+  "Return the id of the Papis link at point, when in org-mode, or nil."
   (when (eq major-mode 'org-mode)
     (let* ((context (org-element-lineage (org-element-context)
                                          '(link)
                                          t))
-           ;; (type (org-element-type context))
            (papis-id (org-element-property :path context)))
       papis-id)))
-;; Document reader:1 ends here
 
+(defun papis--org-looking-at-ref ()
+  "Return the org-cite reference at point, when in org-mode, or nil."
+  (when (eq major-mode 'org-mode)
+    (let ((context (org-element-lineage (org-element-context)
+                                        '(citation-reference)
+                                        t)))
+      (org-element-property :key context))))
 
+(defun papis--format-candidate (doc)
+  (funcall papis-completion-format-function doc))
 
-;; the papis reader should be rather understwood as a dwim (do what i mean) reader.
-;; if you are in =org-mode= and you have the point above a papis link, then
-;; it will get that paper to do whatever papis action you're planning to do.
+(defvar papis--doc-history nil
+  "The history variable for Papis document input. See `papis--read-doc'.")
 
+(defun papis--completing-read (prompt candidates &optional default)
+  "Wrap `completing-read', return the matching value from alist CANDIDATES."
+  (let* ((formatted-candidates-alist
+          (mapcar (lambda (doc) (cons (papis--format-candidate doc) doc))
+                  candidates))
+         (formatted-default
+          (and default (papis--format-candidate default)))
+         (predicate nil) (require-match t) (initial-input nil)
+         (completed-str (completing-read prompt formatted-candidates-alist
+                                         predicate require-match initial-input
+                                         'papis--doc-history
+                                         formatted-default)))
+    (cdr (assoc completed-str formatted-candidates-alist))))
 
-;; [[file:README.org::*Document reader][Document reader:2]]
-(defun papis-from-id (papis-id)
+(defun papis--read-doc ()
+  "Let the user choose a document with `completing-read'.
+
+The default document (selected with RET) is set contextually (using the
+link/ref at point or the current directory)."
+  (let* ((docs (papis--query-documents))
+         (papis-id (papis--org-looking-at-link)) ; Point on Papis link?
+         (ref (papis--org-looking-at-ref)) ; Point on org-cite ref?
+         (match-current-p
+          (lambda (doc)
+            (or
+             ;; Point is on a link to this document
+             (and papis-id (equal (papis--doc-id doc) papis-id))
+             ;; Point is on a citation to this document
+             (and ref (equal (papis--doc-ref doc) ref))
+             ;; The current directory is doc's folder
+             (file-equal-p (papis--doc-folder doc) default-directory)))))
+    (if-let* ((default (seq-find match-current-p docs))
+              (formatted-default (papis--format-candidate default))
+              (prompt (format "Choose document (default %s): "
+                              formatted-default)))
+        (papis--completing-read prompt docs default)
+      (papis--completing-read "Choose document: " docs))))
+
+;;;; Public Papis commands
+
+;;;###autoload
+(defun papis-export-bibtex (&optional bibfile)
+  "Export the Papis library to BIBFILE or to `papis-export-bibtex-file'."
+  (interactive)
+  (if-let* ((dest (or bibfile papis-export-bibtex-file)))
+      (papis--run '("export" "--all" "--format" "bibtex")
+                  (list :file dest))))
+
+;;;###autoload
+(defun papis-browse (doc)
+  (interactive (list (papis--read-doc)))
+  (let ((url
+         (cond
+           ((papis--doc-get doc "url"))
+           ((when-let ((doi (papis--doc-get doc "doi")))
+              (format "https://doi.org/%s" doi)))
+           (t (error "Neither url nor doi found in this document.")))))
+    (browse-url url)))
+
+;;;###autoload
+(defun papis-open (doc)
+  (interactive (list (papis--read-doc)))
+  (let* ((files (papis--doc-file-paths doc))
+         (file (pcase (length files)
+                 (1 (car files))
+                 (0 (error "Doc has no files"))
+                 (_ (completing-read "file: " files)))))
+    (find-file-other-window file)))
+
+;;;###autoload
+(defun papis-add (&optional url)
+  (interactive (list (thing-at-point 'url)))
+  (papis--run-term (list "add" url)))
+
+;;;; Notes
+
+(defun papis--ensured-notes-path (query)
+  "Return the path to the (new) note file for the doc referenced by QUERY.
+
+Let Papis create the note file at the appropriate path from the note
+template if it doesn't exist."
+  (papis--run-to-string
+   ;; will this work on windows?
+   (list "edit" "--notes" "--editor" "echo" query)))
+
+;;;###autoload
+(defun papis-notes (doc)
+  "Open, and create if necessary, the notes file for a document DOC.
+
+See `papis-after-open-note-functions' for customization."
+  (interactive (list (papis--read-doc)))
+  (let ((has-notes (papis--doc-notes-path doc)))
+    (let* ((doc-query (papis--doc-query doc))
+           (notes-path (papis--ensured-notes-path doc-query)))
+      (find-file notes-path)
+      (run-hook-with-args 'papis-after-open-note-functions
+                          doc
+                          (not has-notes)))))
+
+;;;; Editing Papis info files
+
+;;;###autoload
+(defun papis-cache-update (folder)
+  "Update Papis' cache for FOLDER, or the whole database if FOLDER is nil.
+
+When called interactively, FOLDER is taken from variable
+`default-directory', unless a prefix argument is used to force updating
+the whole cache."
+  (interactive (list (unless current-prefix-arg default-directory)))
+  (papis-check-program "0.14")
+  (let ((folder-args (when folder (list "--doc-folder" folder))))
+    (papis--run (append '("cache" "update") folder-args))))
+
+;;;###autoload
+(define-minor-mode papis-edit-mode
+  "Mode for editing papis metadata files."
+  :keymap `((,(kbd "C-c C-c") . ,#'papis-cache-update)))
+
+;;;###autoload
+(defun papis-edit (doc)
+  (interactive (list (papis--read-doc)))
+  (let* ((folder (papis--doc-folder doc))
+         (info (concat folder "/" "info.yaml")))
+    (find-file info)
+    (papis-edit-mode)))
+
+;;;; Org-mode hyperlinks for Papis
+
+(defun papis--from-id (papis-id)
   (let* ((query (format "papis_id:%s" papis-id))
-         (results (papis-query :query query)))
+         (results (papis--query-documents query)))
     (pcase (length results)
       (0 (error "No documents found with papis_id '%s'"
                 papis-id))
@@ -347,116 +409,40 @@
       (_ (error "Too many documents (%d) found with papis_id '%s'"
                 (length results) papis-id)))))
 
-(defun papis--read-doc (&optional force-query)
-  (cond
-    ;; if in org mode and in org link, return it
-    ((and (not force-query)
-          (papis--org-looking-at-link))
-     (papis-from-id (papis--org-looking-at-link)))
-    ((and (not force-query)
-          (let* ((filename (buffer-file-name (current-buffer)))
-                 (dirname (f-dirname filename))
-                 (yaml.info (f-join dirname "info.yaml")))
-            (when (file-exists-p yaml.info)
-              (car (papis-query :doc-folder dirname))))))
-    ((and (not force-query)
-          (let* ((results (papis-query :query (read-string papis--query-prompt
-                                                           nil 'papis)))
-                 (formatted-results (mapcar papis-read-format-function results)))
-            (cdr (assoc
-                  (completing-read "Select an entry: " formatted-results)
-                  formatted-results)))))))
-;; Document reader:2 ends here
-
-;; =papis=
-
-
-;; [[file:README.org::*=papis=][=papis=:1]]
 (require 'ol-doi)
 (org-link-set-parameters "papis"
                          :follow (lambda (papis-id)
-                                   (papis-open (papis-from-id papis-id)))
-                         :export #'ol-papis-export
-                         :complete (lambda (&optional arg)
+                                   (papis-open (papis--from-id papis-id)))
+                         :export #'papis--export-link
+                         :complete (lambda (&optional _arg)
                                      (format "papis:%s"
-                                             (papis-doc-get (papis--read-doc)
+                                             (papis--doc-get (papis--read-doc)
                                                             "papis_id")))
                          :insert-description
-                         (lambda (link desc)
+                         (lambda (link _desc)
                            (let* ((papis-id (string-replace "papis:"  "" link))
-                                  (doc (papis-from-id papis-id)))
-                             (papis-doc-get doc "title"))))
+                                  (doc (papis--from-id papis-id)))
+                             (papis--doc-get doc "title"))))
 
-(defun ol-papis-export (papis-id description format info)
-  (let* ((doc (papis-from-id papis-id))
-         (doi (papis-doc-get doc "doi"))
-         (url (papis-doc-get doc "url")))
+(defun papis--export-link (papis-id description format info)
+  (let* ((doc (papis--from-id papis-id))
+         (doi (papis--doc-get doc "doi"))
+         (_url (papis--doc-get doc "url")))
     (cond
       (doi (org-link-doi-export doi description format info)))))
-;; =papis=:1 ends here
 
-;; Paper sections
-;; When doing research, often you would like to create some notes on every paper
-;; and write some sections with the section titles being links to the papers
-;; with some properties so that you can use org-mode's colum mode.
+;;;; org-ref
 
-;; You can use the following function to create a link with properties
-
-
-;; [[file:README.org::*Paper sections][Paper sections:1]]
-(defun papis-org-insert-heading (doc)
-  (interactive (list (papis--read-doc)))
-  (let ((title (papis-doc-get doc "title"))
-        (author (papis-doc-get doc "author"))
-        (year (papis-doc-get doc "year"))
-        (doi (papis-doc-get doc "doi"))
-        (papis-id (papis-doc-get doc "papis_id")))
-    (org-insert-heading)
-    (insert (format "[[papis:%s][%s]]" papis-id title))
-    (org-set-property "PAPIS_ID" papis-id)
-    (org-set-property "AUTHOR" author)
-    (org-set-property "TITLE" title)
-    (org-set-property "YEAR" (format "%s" year))
-    (org-set-property "DOI" doi)))
-;; Paper sections:1 ends here
-
-
-
-;; Its implementation is given below:
-
-;; [[file:README.org::*Open pdfs][Open pdfs:2]]
 (defun papis-org-ref-get-pdf-filename (key)
-    (interactive)
-    (let* ((docs (papis-query (format "ref:'%s'" key)))
+    (let* ((docs (papis--query-documents (format "ref:'%s'" key)))
            (doc (car docs))
-           (files (papis--get-file-paths doc)))
+           (files (papis--doc-file-paths doc)))
       (pcase (length files)
         (1 (car files))
         (_ (completing-read "" files)))))
-;; Open pdfs:2 ends here
 
-;; Citations
-;; In general it is recommended to use the citation mechanisms of
-;; =org-ref=, however, if for some reason you would like to cite
-;; directly from =papis=, you can use the function
+;;;; Dynamic block to tangle a .bib from all references in an org file
 
-
-;; [[file:README.org::*Citations][Citations:1]]
-(defun papis-insert-citation (doc)
-  (interactive (list (papis--read-doc)))
-  (let* ((ref (papis--get-ref doc)))
-    (if (fboundp 'citar-insert-citation)
-        (citar-insert-citation (list ref))
-      (insert (format "[cite:@%s]" ref)))))
-;; Citations:1 ends here
-
-
-
-;; and we will need also a way of listing all the keys of the document
-;; for further functions. I took this from the good =citar= package
-
-
-;; [[file:README.org::*Citations][Citations:2]]
 (defun papis-org-list-keys ()
   "List citation keys in the org buffer."
   (let ((org-tree (org-element-parse-buffer)))
@@ -464,15 +450,11 @@
      (org-element-map org-tree 'citation-reference
        (lambda (r) (org-element-property :key r))
        org-tree))))
-;; Citations:2 ends here
 
+(defun papis--exec (python-file &optional arguments)
+  (papis-check-program "0.12")
+  (papis--run-to-string (list "exec" python-file arguments)))
 
-
-;; #+RESULTS: references-to-bibtex-python-script
-
-
-
-;; [[file:README.org::*Convert references into bibtex entries][Convert references into bibtex entries:2]]
 (defvar papis--refs-to-bibtex-script
 "
 import argparse
@@ -492,37 +474,29 @@ for ref in args.refs:
 for d in docs:
     print(to_bibtex(d))
 ")
-;; Convert references into bibtex entries:2 ends here
 
-;; [[file:README.org::*Convert references into bibtex entries][Convert references into bibtex entries:3]]
 (defun papis--refs-to-bibtex (refs)
   (let ((py-script (make-temp-file "papis-bibtex-script" nil ".py")))
     (with-temp-buffer
       (insert papis--refs-to-bibtex-script)
       (write-file py-script))
-    (papis-exec py-script (s-join " " refs))))
-;; Convert references into bibtex entries:3 ends here
+    (papis--exec py-script refs)))
 
-;; The =papis-bibtex-refs= dynamic block
-
-
-;; [[file:README.org::*The =papis-bibtex-refs= dynamic block][The =papis-bibtex-refs= dynamic block:1]]
 (defun papis-create-papis-bibtex-refs-dblock (bibfile)
   (insert (format "#+begin: papis-bibtex-refs :tangle %s" bibfile))
   (insert "\n")
   (insert "#+end:"))
 
+;;;###autoload
 (defun papis-extract-citations-into-dblock (&optional bibfile)
   (interactive)
   (if (org-find-dblock "papis-bibtex-refs")
       (progn
-        (org-show-entry)
+        (org-fold-show-entry)
         (org-update-dblock))
     (papis-create-papis-bibtex-refs-dblock
      (or bibfile (read-file-name "Bib file: " nil "main.bib")))))
-;; The =papis-bibtex-refs= dynamic block:1 ends here
 
-;; [[file:README.org::*The =papis-bibtex-refs= dynamic block][The =papis-bibtex-refs= dynamic block:2]]
 (defun org-dblock-write:papis-bibtex-refs (params)
   (let ((tangle-file (or (plist-get params :tangle)
                          (buffer-file-name)))
@@ -536,10 +510,7 @@ for d in docs:
                           refs)))
     (insert (papis--refs-to-bibtex queries)))
   (insert "#+end_src\n"))
-;; The =papis-bibtex-refs= dynamic block:2 ends here
 
-;; End
-
-;; [[file:README.org::*End][End:1]]
 (provide 'papis)
-;; End:1 ends here
+
+;;; papis.el ends here
