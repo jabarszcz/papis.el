@@ -78,16 +78,16 @@ When nil, use the default library configured in the Papis config."
   #'papis-after-open-note-default
   "An abnormal hook to run after a note is opened.
 
-Abnormal because it must accept arguments: NEW which is non-nil when the
-note has just been created, and DOC which contains the hashtable
-describing the document.
+Abnormal because it must accept arguments: DOC which contains the
+hashtable describing the document, and NEW which is non-nil when the
+note has just been created.
 
 For example, it can be used to move the cursor to a specific place in
 note templates."
   :type 'hook
   :group 'papis)
 
-(defun papis-after-open-note-default (&optional _new)
+(defun papis-after-open-note-default (&optional _doc _new)
   "Move point after the first occurence of \"TODO\" in the note."
   (search-forward "TODO"
                   nil ; Don't limit the search
