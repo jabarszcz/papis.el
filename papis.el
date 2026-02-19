@@ -343,7 +343,7 @@ link/ref at point or the current directory)."
 ;;;###autoload
 (defun papis-add (&optional url)
   (interactive (list (thing-at-point 'url)))
-  (papis--run-term (list "add" url)))
+  (papis--run-term (cons "add" (and url (list url)))))
 
 ;;;; Notes
 
